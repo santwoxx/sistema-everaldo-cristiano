@@ -301,9 +301,9 @@ export function ShellAdmin({
                     />
                     <div
                       role="menu"
-                      className="animar-entrada absolute right-0 z-20 mt-2 w-60 overflow-hidden rounded-xl border border-borda bg-white shadow-[var(--shadow-flutuante)]"
+                      className="animar-entrada absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-2xl border-2 border-slate-900 bg-white shadow-2xl ring-1 ring-black/20"
                     >
-                      <div className="border-b border-borda px-4 py-3 flex items-center gap-3">
+                      <div className="border-b-2 border-slate-200 bg-slate-50 px-4 py-3.5 flex items-center gap-3">
                         {sessao.foto ? (
                           <img
                             src={sessao.foto}

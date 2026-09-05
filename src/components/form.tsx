@@ -128,7 +128,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div
-        className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
         onClick={aoFechar}
         aria-hidden
       />
@@ -138,21 +138,21 @@ export function Modal({
         aria-modal="true"
         aria-label={titulo}
         tabIndex={-1}
-        className={`animar-entrada relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl border border-slate-200/80 outline-none sm:rounded-2xl ${largura}`}
+        className={`animar-entrada relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-[0_25px_70px_rgba(0,0,0,0.6)] border-2 border-black sm:border-[2.5px] sm:border-black sm:rounded-2xl outline-none ring-1 ring-black/30 ${largura}`}
       >
-        <header className="flex items-center justify-between gap-4 border-b border-borda bg-slate-50/80 px-6 py-4">
+        <header className="flex items-center justify-between gap-4 border-b-2 border-black bg-slate-100 px-6 py-4">
           <div className="flex items-center gap-3">
             {icone && (
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-marca-50 text-marca-600 ring-1 ring-marca-100">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-slate-900 border-2 border-black shadow-xs">
                 {icone}
               </span>
             )}
             <div>
-              <h2 className="text-base font-bold tracking-tight text-texto sm:text-lg">
+              <h2 className="text-base font-extrabold tracking-tight text-slate-950 sm:text-lg">
                 {titulo}
               </h2>
               {descricao && (
-                <p className="mt-0.5 text-xs text-suave line-clamp-2">{descricao}</p>
+                <p className="mt-0.5 text-xs font-medium text-slate-600 line-clamp-2">{descricao}</p>
               )}
             </div>
           </div>
@@ -160,7 +160,7 @@ export function Modal({
             type="button"
             onClick={aoFechar}
             aria-label="Fechar"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-suave transition-colors hover:bg-slate-200/70 hover:text-texto"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-400 bg-white text-slate-700 shadow-xs transition-colors hover:bg-black hover:text-white hover:border-black"
           >
             <X size={18} />
           </button>

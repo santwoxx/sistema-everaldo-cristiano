@@ -146,8 +146,8 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
             </Campo>
           </div>
 
-          <fieldset className="rounded-xl border border-borda bg-slate-50/50 p-4">
-            <legend className="px-1.5 text-xs font-bold uppercase tracking-wide text-suave">
+          <fieldset className="rounded-xl border-2 border-slate-300 bg-slate-50/70 p-4">
+            <legend className="px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-slate-800 bg-white border border-slate-300 rounded-md">
               Endereço {buscandoCep && "(buscando CEP...)"}
             </legend>
 

@@ -45,8 +45,8 @@ export function MeuPerfilModal({
         {estado.sucesso && <Aviso tipo="sucesso">{estado.sucesso}</Aviso>}
 
         {/* Foto do perfil */}
-        <div className="rounded-2xl border border-borda bg-slate-50/70 p-4">
-          <label className="etiqueta mb-2 block font-semibold text-texto">
+        <div className="rounded-2xl border-2 border-slate-300 bg-slate-50/70 p-4">
+          <label className="etiqueta mb-2 block font-bold text-slate-900">
             Sua Foto de Perfil
           </label>
           <InputFoto
@@ -72,9 +72,9 @@ export function MeuPerfilModal({
             <input
               value={sessao.email}
               disabled
-              className="campo bg-slate-100 text-suave cursor-not-allowed"
+              className="campo bg-slate-100 text-suave cursor-not-allowed border-slate-300"
             />
-            <p className="mt-1 text-[11px] text-suave">
+            <p className="mt-1 text-[11px] font-medium text-slate-600">
               O e-mail é a sua chave de login.
             </p>
           </Campo>
@@ -89,10 +89,10 @@ export function MeuPerfilModal({
           </Campo>
         </div>
 
-        <div className="rounded-2xl border border-borda bg-slate-50/70 p-4 space-y-3">
+        <div className="rounded-2xl border-2 border-slate-300 bg-slate-50/70 p-4 space-y-3">
           <div className="flex items-center gap-2">
-            <Lock size={15} className="text-suave" />
-            <h4 className="text-xs font-bold uppercase tracking-wider text-suave">
+            <Lock size={15} className="text-slate-800" />
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
               Alterar Senha (Opcional)
             </h4>
           </div>

@@ -87,35 +87,40 @@
   .campo {
     width: 100%;
     border-radius: 10px;
-    border: 1px solid var(--color-borda);
+    border: 1.5px solid #64748b;
     background: #fff;
-    padding: 0.6rem 0.8rem;
+    padding: 0.65rem 0.85rem;
     font-size: 0.9rem;
-    color: var(--color-texto);
+    color: #0f172a;
+    font-weight: 500;
     outline: none;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .campo::placeholder {
-    color: #9db0aa;
+    color: #94a3b8;
+  }
+  .campo:hover {
+    border-color: #0f172a;
   }
   .campo:focus {
-    border-color: var(--color-marca-400);
-    box-shadow: 0 0 0 3px var(--color-marca-100);
+    border-color: #0f172a;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.18);
   }
   .campo:disabled {
-    background: #f6f8f7;
-    color: var(--color-suave);
+    background: #f1f5f9;
+    color: #64748b;
+    border-color: #cbd5e1;
   }
   .campo-erro {
-    border-color: #f43f5e;
+    border-color: #e11d48 !important;
   }
 
   .etiqueta {
     display: block;
     margin-bottom: 0.35rem;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: #3c5750;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #0f172a;
   }
 
   /* --- Botoes --------------------------------------------------------- */

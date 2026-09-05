@@ -89,9 +89,9 @@ export function FormularioLancamento({
               className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-sm font-semibold transition-colors ${
                 tipo === t
                   ? t === "RECEITA"
-                    ? "border-marca-500 bg-marca-50 text-marca-700"
-                    : "border-rose-400 bg-rose-50 text-rose-700"
-                  : "border-borda text-suave hover:bg-[#f7f9f8]"
+                    ? "border-black bg-marca-50 text-marca-800 shadow-xs"
+                    : "border-black bg-rose-50 text-rose-800 shadow-xs"
+                  : "border-slate-300 text-slate-700 bg-white hover:bg-slate-100"
               }`}
             >
               <input

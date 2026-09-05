@@ -72,8 +72,8 @@ export function FormularioUsuario({ inicial }: { inicial?: UsuarioInicial }) {
           {estado.sucesso && <Aviso tipo="sucesso">{estado.sucesso}</Aviso>}
 
           {/* Foto */}
-          <div className="rounded-2xl border border-borda bg-slate-50/70 p-4">
-            <label className="etiqueta mb-2 block font-semibold text-texto">
+          <div className="rounded-2xl border-2 border-slate-300 bg-slate-50/70 p-4">
+            <label className="etiqueta mb-2 block font-bold text-slate-900">
               Foto do funcionário / perfil
             </label>
             <InputFoto
@@ -94,8 +94,8 @@ export function FormularioUsuario({ inicial }: { inicial?: UsuarioInicial }) {
                 key={opcao.valor}
                 className={`cursor-pointer rounded-xl border-2 px-3 py-2.5 text-center transition-colors ${
                   papel === opcao.valor
-                    ? "border-marca-500 bg-marca-50"
-                    : "border-borda hover:bg-[#f7f9f8]"
+                    ? "border-black bg-slate-900 text-white shadow-sm"
+                    : "border-slate-300 bg-white hover:bg-slate-100"
                 }`}
               >
                 <input
@@ -107,13 +107,13 @@ export function FormularioUsuario({ inicial }: { inicial?: UsuarioInicial }) {
                   className="sr-only"
                 />
                 <span
-                  className={`block text-sm font-semibold ${
-                    papel === opcao.valor ? "text-marca-700" : "text-texto"
+                  className={`block text-sm font-bold ${
+                    papel === opcao.valor ? "text-white" : "text-slate-900"
                   }`}
                 >
                   {opcao.rotulo}
                 </span>
-                <span className="block text-[10px] text-suave">{opcao.nota}</span>
+                <span className={`block text-[10px] ${papel === opcao.valor ? "text-slate-300" : "text-slate-500"}`}>{opcao.nota}</span>
               </label>
             ))}
           </div>
@@ -192,16 +192,16 @@ export function FormularioUsuario({ inicial }: { inicial?: UsuarioInicial }) {
             </Campo>
           </div>
 
-          <label className="flex items-center gap-2.5 rounded-xl border border-borda px-3 py-2.5">
+          <label className="flex items-center gap-2.5 rounded-xl border-2 border-slate-300 bg-slate-50/70 px-3.5 py-3">
             <input
               type="checkbox"
               name="ativo"
               defaultChecked={inicial?.ativo ?? true}
-              className="h-4 w-4 accent-marca-500"
+              className="h-4 w-4 accent-marca-600"
             />
-            <span className="text-sm text-texto">
+            <span className="text-sm font-semibold text-slate-900">
               Acesso ativo
-              <span className="block text-[11px] text-suave">
+              <span className="block text-[11px] font-normal text-slate-600">
                 Desmarque para bloquear o login sem apagar o histórico.
               </span>
             </span>
