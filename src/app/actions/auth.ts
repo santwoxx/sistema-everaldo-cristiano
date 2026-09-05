@@ -36,6 +36,7 @@ export async function entrar(
     email: usuario.email,
     papel: usuario.papel as Papel,
     corAvatar: usuario.corAvatar,
+    foto: usuario.foto ?? null,
   });
 
   redirect(usuario.papel === "ADMIN" ? "/painel" : "/montador");

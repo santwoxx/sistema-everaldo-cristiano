@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Contact, MapPin, Phone, Search, Wrench } from "lucide-react";
+import { Contact, MapPin, Phone, Search, Trash2, Wrench } from "lucide-react";
 import { dbClientes, dbOrdens, dbOrcamentos } from "@/lib/firestore";
 import {
   iniciais,
@@ -11,6 +11,8 @@ import {
 } from "@/lib/format";
 import { Painel, Vazio } from "@/components/ui";
 import { FormularioCliente } from "./formulario-cliente";
+import { FormConfirmar } from "@/components/form";
+import { excluirCliente } from "@/app/actions/clientes";
 
 export const metadata: Metadata = { title: "Clientes" };
 export const dynamic = "force-dynamic";
@@ -106,24 +108,40 @@ export default async function PaginaClientes({
                       <p className="truncate text-[11px] text-suave">{c.documento}</p>
                     )}
                   </div>
-                  <FormularioCliente
-                    inicial={{
-                      id: c.id,
-                      nome: c.nome,
-                      telefone: c.telefone ?? null,
-                      email: c.email ?? null,
-                      documento: c.documento ?? null,
-                      cep: c.cep ?? null,
-                      endereco: c.endereco ?? null,
-                      numero: c.numero ?? null,
-                      complemento: c.complemento ?? null,
-                      bairro: c.bairro ?? null,
-                      cidade: c.cidade ?? null,
-                      estado: c.estado ?? null,
-                      observacoes: c.observacoes ?? null,
-                      temOrdens: ordens.length > 0,
-                    }}
-                  />
+                  <div className="flex items-center gap-1">
+                    <FormularioCliente
+                      inicial={{
+                        id: c.id,
+                        nome: c.nome,
+                        telefone: c.telefone ?? null,
+                        email: c.email ?? null,
+                        documento: c.documento ?? null,
+                        cep: c.cep ?? null,
+                        endereco: c.endereco ?? null,
+                        numero: c.numero ?? null,
+                        complemento: c.complemento ?? null,
+                        bairro: c.bairro ?? null,
+                        cidade: c.cidade ?? null,
+                        estado: c.estado ?? null,
+                        observacoes: c.observacoes ?? null,
+                        temOrdens: ordens.length > 0,
+                      }}
+                    />
+                    <FormConfirmar
+                      action={excluirCliente}
+                      mensagem={`Excluir o cliente ${c.nome}?`}
+                    >
+                      <input type="hidden" name="id" value={c.id} />
+                      <button
+                        type="submit"
+                        aria-label={`Excluir ${c.nome}`}
+                        className="btn btn-fantasma !p-1.5 text-suave hover:text-rose-600"
+                        title="Excluir cliente"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </FormConfirmar>
+                  </div>
                 </div>
 
                 <dl className="mt-3 space-y-1.5 text-xs">

@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Save, Trash2, UserPlus } from "lucide-react";
 import { Aviso, BotaoEnviar, Campo, FormConfirmar, Modal } from "@/components/form";
+import { InputFoto } from "@/components/input-foto";
 import { excluirUsuario, salvarUsuario } from "@/app/actions/equipe";
 import type { EstadoForm } from "@/app/actions/clientes";
 
@@ -16,6 +17,8 @@ export type UsuarioInicial = {
   documento: string | null;
   comissaoPadrao: number;
   ativo: boolean;
+  foto?: string | null;
+  corAvatar?: string;
 };
 
 export function FormularioUsuario({ inicial }: { inicial?: UsuarioInicial }) {
@@ -41,7 +44,7 @@ export function FormularioUsuario({ inicial }: { inicial?: UsuarioInicial }) {
           type="button"
           onClick={() => setAberto(true)}
           aria-label={`Editar ${inicial.nome}`}
-          className="btn btn-fantasma !p-1.5"
+          className="btn btn-fantasma !p-1.5 hover:text-marca-600"
         >
           <Pencil size={14} />
         </button>
@@ -58,14 +61,28 @@ export function FormularioUsuario({ inicial }: { inicial?: UsuarioInicial }) {
       <Modal
         aberto={aberto}
         aoFechar={() => setAberto(false)}
-        titulo={inicial ? "Editar acesso" : "Novo acesso"}
-        descricao="Administradores gerenciam o sistema; montadores usam o app de campo."
+        titulo={inicial ? "Editar acesso & perfil" : "Novo acesso"}
+        descricao="Cadastre administradores para gerenciar o sistema ou montadores para uso em campo."
+        icone={<UserPlus size={20} />}
         largura="max-w-xl"
       >
         <form action={acao} className="space-y-4">
           {inicial && <input type="hidden" name="id" value={inicial.id} />}
           {estado.erro && <Aviso tipo="erro">{estado.erro}</Aviso>}
           {estado.sucesso && <Aviso tipo="sucesso">{estado.sucesso}</Aviso>}
+
+          {/* Foto */}
+          <div className="rounded-2xl border border-borda bg-slate-50/70 p-4">
+            <label className="etiqueta mb-2 block font-semibold text-texto">
+              Foto do funcionário / perfil
+            </label>
+            <InputFoto
+              nome="foto"
+              valorInicial={inicial?.foto}
+              nomeUsuario={inicial?.nome}
+              corAvatar={inicial?.corAvatar ?? "#16a34a"}
+            />
+          </div>
 
           {/* Perfil */}
           <div className="grid grid-cols-2 gap-2">

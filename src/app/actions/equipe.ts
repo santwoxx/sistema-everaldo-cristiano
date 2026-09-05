@@ -54,6 +54,8 @@ export async function salvarUsuario(
     return { erro: "Já existe um usuário com esse e-mail." };
   }
 
+  const foto = String(formData.get("foto") ?? "").trim() || null;
+
   const base = {
     nome: d.nome,
     email,
@@ -62,6 +64,7 @@ export async function salvarUsuario(
     documento: d.documento || null,
     comissaoPadrao: d.comissaoPadrao,
     ativo: d.ativo ?? true,
+    foto,
   };
 
   if (id) {
@@ -80,7 +83,60 @@ export async function salvarUsuario(
 
   revalidatePath("/equipe");
   revalidatePath("/ordens");
-  return { sucesso: id ? "Dados atualizados." : "Acesso criado com sucesso." };
+  revalidatePath("/painel");
+  return { sucesso: id ? "Dados atualizados com sucesso!" : "Acesso criado com sucesso!" };
+}
+
+export async function atualizarMeuPerfil(
+  _estado: EstadoForm,
+  formData: FormData
+): Promise<EstadoForm> {
+  const { exigirSessao, criarSessao } = await import("@/lib/auth");
+  const sessao = await exigirSessao();
+
+  const nome = String(formData.get("nome") ?? "").trim();
+  const telefone = String(formData.get("telefone") ?? "").trim() || null;
+  const foto = String(formData.get("foto") ?? "").trim() || null;
+  const senha = String(formData.get("senha") ?? "").trim();
+  const confirmarSenha = String(formData.get("confirmarSenha") ?? "").trim();
+
+  if (!nome || nome.length < 2) {
+    return { erro: "Informe seu nome completo." };
+  }
+
+  if (senha) {
+    if (senha.length < 6) {
+      return { erro: "A nova senha deve ter no mínimo 6 caracteres." };
+    }
+    if (confirmarSenha && senha !== confirmarSenha) {
+      return { erro: "As senhas não coincidem." };
+    }
+  }
+
+  const atualizado: any = {
+    nome,
+    telefone,
+    foto,
+  };
+
+  if (senha) {
+    atualizado.senhaHash = await hashSenha(senha);
+  }
+
+  await dbUsuarios.atualizar(sessao.id, atualizado);
+
+  // Atualiza os dados da sessão (cookie)
+  await criarSessao({
+    id: sessao.id,
+    nome,
+    email: sessao.email,
+    papel: sessao.papel,
+    corAvatar: sessao.corAvatar,
+    foto,
+  });
+
+  revalidatePath("/", "layout");
+  return { sucesso: "Seu perfil foi atualizado com sucesso!" };
 }
 
 export async function alternarAtivo(formData: FormData) {

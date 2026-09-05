@@ -73,14 +73,8 @@ export async function excluirCliente(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const todasOrdens = await dbOrdens.listar();
-  const ordens = todasOrdens.filter((o) => o.clienteId === id).length;
-  if (ordens > 0) {
-    throw new Error(
-      `Este cliente possui ${ordens} ordem(ns) de serviço e não pode ser excluído.`
-    );
-  }
-
   await dbClientes.excluir(id);
   revalidatePath("/clientes");
+  revalidatePath("/ordens");
+  revalidatePath("/painel");
 }

@@ -7,8 +7,9 @@ import {
   MapPin,
   Package,
   Phone,
+  Trash2,
 } from "lucide-react";
-import { dbOrcamentos, dbOrdens } from "@/lib/firestore";
+import { dbOrcamentos, dbOrdens, dbClientes } from "@/lib/firestore";
 import { STATUS_ORCAMENTO, TIPOS_SERVICO, StatusOrcamento } from "@/lib/constants";
 import {
   data as fmtData,
@@ -18,6 +19,9 @@ import {
   telefone as fmtTelefone,
 } from "@/lib/format";
 import { Painel, StatusOrc, Vazio } from "@/components/ui";
+import { FormConfirmar } from "@/components/form";
+import { excluirOrcamento } from "@/app/actions/orcamentos";
+import { FormularioOrcamentoManual } from "./formulario-orcamento-manual";
 
 export const metadata: Metadata = { title: "Orçamentos Recebidos" };
 export const dynamic = "force-dynamic";
@@ -29,9 +33,10 @@ export default async function PaginaOrcamentos({
 }) {
   const { status = "todos" } = await searchParams;
 
-  const [todosOrcamentos, todasOrdens] = await Promise.all([
+  const [todosOrcamentos, todasOrdens, todosClientes] = await Promise.all([
     dbOrcamentos.listar(status !== "todos" ? { status: status as StatusOrcamento } : undefined),
     dbOrdens.listar(),
+    dbClientes.listar(),
   ]);
 
   const ordensPorOrcamento = new Map(todasOrdens.filter((o) => o.orcamentoId).map((o) => [o.orcamentoId!, o]));
@@ -52,11 +57,21 @@ export default async function PaginaOrcamentos({
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-suave">
-          Solicitações enviadas pelos clientes através do link público.
+          Gerencie solicitações públicas de clientes e cadastre novos orçamentos manuais.
         </p>
-        <Link href="/links" className="btn btn-principal">
-          <Link2 size={16} /> Gerar link p/ cliente
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/links" className="btn btn-claro">
+            <Link2 size={16} /> Link p/ cliente
+          </Link>
+          <FormularioOrcamentoManual
+            clientes={todosClientes.map((c) => ({
+              id: c.id,
+              nome: c.nome,
+              telefone: c.telefone ?? null,
+              cidade: c.cidade ?? null,
+            }))}
+          />
+        </div>
       </div>
 
       <div className="rolagem-fina -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
@@ -142,17 +157,36 @@ export default async function PaginaOrcamentos({
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      {o.valorProposto ? (
-                        <p className="text-base font-bold text-texto">
-                          {moeda(o.valorProposto)}
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        {o.valorProposto ? (
+                          <p className="text-base font-bold text-texto">
+                            {moeda(o.valorProposto)}
+                          </p>
+                        ) : (
+                          <p className="text-xs font-medium text-suave">Sem proposta</p>
+                        )}
+                        <p className="mt-0.5 text-[11px] text-suave">
+                          {dataHora(o.criadoEm)}
                         </p>
-                      ) : (
-                        <p className="text-xs font-medium text-suave">Sem proposta</p>
-                      )}
-                      <p className="mt-0.5 text-[11px] text-suave">
-                        {dataHora(o.criadoEm)}
-                      </p>
+                      </div>
+
+                      <FormConfirmar
+                        action={excluirOrcamento}
+                        mensagem={`Excluir o orçamento de ${o.nomeContato}?`}
+                        className="self-center"
+                      >
+                        <input type="hidden" name="id" value={o.id} />
+                        <button
+                          type="submit"
+                          onClick={(e) => e.stopPropagation()}
+                          className="btn btn-fantasma !p-2 text-suave hover:text-rose-600"
+                          title="Excluir orçamento"
+                          aria-label={`Excluir orçamento ${orcNumero(o.numero)}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </FormConfirmar>
                     </div>
                   </Link>
                 </li>

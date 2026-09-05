@@ -48,12 +48,20 @@ export default async function PaginaEquipe() {
           return (
             <article key={u.id} className="cartao p-4 sm:p-5">
               <div className="flex items-start gap-3">
-                <span
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white"
-                  style={{ background: u.corAvatar }}
-                >
-                  {iniciais(u.nome)}
-                </span>
+                {u.foto ? (
+                  <img
+                    src={u.foto}
+                    alt={u.nome}
+                    className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-slate-200"
+                  />
+                ) : (
+                  <span
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white"
+                    style={{ background: u.corAvatar }}
+                  >
+                    {iniciais(u.nome)}
+                  </span>
+                )}
 
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -113,6 +121,8 @@ export default async function PaginaEquipe() {
                       documento: u.documento ?? null,
                       comissaoPadrao: u.comissaoPadrao,
                       ativo: u.ativo,
+                      foto: u.foto ?? null,
+                      corAvatar: u.corAvatar,
                     }}
                   />
                   <form action={alternarAtivo}>

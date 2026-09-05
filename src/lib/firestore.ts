@@ -32,6 +32,7 @@ export interface UsuarioDoc {
   comissaoPadrao: number;
   ativo: boolean;
   corAvatar: string;
+  foto?: string | null;
   ultimoAcesso?: string | null;
   criadoEm: string;
   atualizadoEm: string;

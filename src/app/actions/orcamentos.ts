@@ -127,6 +127,60 @@ export async function atualizarOrcamento(
   return { sucesso: "Orçamento atualizado." };
 }
 
+export async function criarOrcamentoManual(
+  _estado: EstadoForm,
+  formData: FormData
+): Promise<EstadoForm> {
+  await exigirAdmin();
+
+  const nomeContato = texto(formData, "nomeContato");
+  const telefone = texto(formData, "telefone");
+  const tipoServico = texto(formData, "tipoServico") || "MONTAGEM";
+  const descricao = texto(formData, "descricao");
+
+  if (!nomeContato || nomeContato.length < 2) {
+    return { erro: "Informe o nome do cliente / contato." };
+  }
+  if (!telefone || telefone.length < 8) {
+    return { erro: "Informe um telefone / WhatsApp de contato." };
+  }
+  if (!descricao || descricao.length < 3) {
+    return { erro: "Informe uma breve descrição do serviço a ser orçado." };
+  }
+
+  const valorPropostoStr = texto(formData, "valorProposto");
+  const valorProposto = valorPropostoStr ? paraNumero(valorPropostoStr) : null;
+  const quantidadeItens = Number(formData.get("quantidadeItens")) || 1;
+  const prazoDesejado = texto(formData, "prazoDesejado");
+
+  await comNumeroSequencial("orcamento", (numero) =>
+    dbOrcamentos.criar({
+      numero,
+      nomeContato,
+      telefone,
+      email: textoOuNulo(formData, "email"),
+      documento: textoOuNulo(formData, "documento"),
+      cep: textoOuNulo(formData, "cep"),
+      endereco: textoOuNulo(formData, "endereco"),
+      cidade: textoOuNulo(formData, "cidade"),
+      estado: textoOuNulo(formData, "estado"),
+      tipoServico,
+      descricao,
+      quantidadeItens,
+      prazoDesejado: prazoDesejado ? new Date(`${prazoDesejado}T12:00:00`).toISOString() : null,
+      valorProposto,
+      observacoesInternas: textoOuNulo(formData, "observacoesInternas"),
+      status: valorProposto ? "PROPOSTA_ENVIADA" : "NOVO",
+      respondidoEm: valorProposto ? new Date().toISOString() : null,
+      itensJson: "[]",
+    })
+  );
+
+  revalidatePath("/orcamentos");
+  revalidatePath("/painel");
+  return { sucesso: "Orçamento criado com sucesso!" };
+}
+
 export async function marcarEmAnalise(formData: FormData) {
   await exigirAdmin();
   const id = String(formData.get("id") ?? "");
@@ -144,12 +198,6 @@ export async function excluirOrcamento(formData: FormData) {
   await exigirAdmin();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-
-  const todasOrdens = await dbOrdens.listar();
-  const vinculada = todasOrdens.find((o) => o.orcamentoId === id);
-  if (vinculada) {
-    throw new Error("Este orçamento já virou ordem de serviço e não pode ser excluído.");
-  }
 
   await dbOrcamentos.excluir(id);
   revalidatePath("/orcamentos");

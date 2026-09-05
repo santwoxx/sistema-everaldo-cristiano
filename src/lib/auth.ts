@@ -21,6 +21,7 @@ export type Sessao = {
   email: string;
   papel: Papel;
   corAvatar: string;
+  foto?: string | null;
 };
 
 export async function hashSenha(senha: string): Promise<string> {
@@ -68,6 +69,7 @@ export async function sessaoAtual(): Promise<Sessao | null> {
       email: String(payload.email ?? ""),
       papel: payload.papel as Papel,
       corAvatar: String(payload.corAvatar ?? "#16a34a"),
+      foto: payload.foto ? String(payload.foto) : null,
     };
   } catch {
     return null;

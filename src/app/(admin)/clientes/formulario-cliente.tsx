@@ -30,6 +30,13 @@ export type ClienteInicial = {
 
 export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
   const [aberto, setAberto] = useState(false);
+  const [cep, setCep] = useState(inicial?.cep ?? "");
+  const [endereco, setEndereco] = useState(inicial?.endereco ?? "");
+  const [bairro, setBairro] = useState(inicial?.bairro ?? "");
+  const [cidade, setCidade] = useState(inicial?.cidade ?? "");
+  const [estadoUf, setEstadoUf] = useState(inicial?.estado ?? "");
+  const [buscandoCep, setBuscandoCep] = useState(false);
+
   const router = useRouter();
   const [estado, acao] = useActionState<EstadoForm, FormData>(salvarCliente, {});
 
@@ -43,6 +50,28 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
     }
   }, [estado.sucesso, router]);
 
+  const buscarCep = async (valor: string) => {
+    const limpo = valor.replace(/\D/g, "");
+    setCep(valor);
+    if (limpo.length === 8) {
+      setBuscandoCep(true);
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${limpo}/json/`);
+        const data = await res.json();
+        if (!data.erro) {
+          if (data.logradouro) setEndereco(data.logradouro);
+          if (data.bairro) setBairro(data.bairro);
+          if (data.localidade) setCidade(data.localidade);
+          if (data.uf) setEstadoUf(data.uf);
+        }
+      } catch {
+        // Ignora erro de rede no viacep
+      } finally {
+        setBuscandoCep(false);
+      }
+    }
+  };
+
   return (
     <>
       {inicial ? (
@@ -50,7 +79,7 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
           type="button"
           onClick={() => setAberto(true)}
           aria-label={`Editar ${inicial.nome}`}
-          className="btn btn-fantasma !p-1.5"
+          className="btn btn-fantasma !p-1.5 hover:text-marca-600"
         >
           <Pencil size={14} />
         </button>
@@ -68,7 +97,8 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
         aberto={aberto}
         aoFechar={() => setAberto(false)}
         titulo={inicial ? "Editar cliente" : "Novo cliente"}
-        descricao="Os dados de endereço são sugeridos automaticamente ao criar uma OS."
+        descricao="Cadastre ou atualize os contatos e endereços do cliente."
+        icone={<UserPlus size={20} />}
       >
         <form action={acao} className="space-y-4">
           {inicial && <input type="hidden" name="id" value={inicial.id} />}
@@ -116,16 +146,17 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
             </Campo>
           </div>
 
-          <fieldset className="rounded-xl border border-borda p-4">
+          <fieldset className="rounded-xl border border-borda bg-slate-50/50 p-4">
             <legend className="px-1.5 text-xs font-bold uppercase tracking-wide text-suave">
-              Endereço
+              Endereço {buscandoCep && "(buscando CEP...)"}
             </legend>
 
             <div className="grid gap-4 sm:grid-cols-6">
               <Campo rotulo="CEP" className="sm:col-span-2">
                 <input
                   name="cep"
-                  defaultValue={inicial?.cep ?? ""}
+                  value={cep}
+                  onChange={(e) => buscarCep(e.target.value)}
                   inputMode="numeric"
                   placeholder="00000-000"
                   className="campo"
@@ -135,7 +166,8 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
               <Campo rotulo="Logradouro" className="sm:col-span-4">
                 <input
                   name="endereco"
-                  defaultValue={inicial?.endereco ?? ""}
+                  value={endereco}
+                  onChange={(e) => setEndereco(e.target.value)}
                   placeholder="Rua, avenida…"
                   className="campo"
                 />
@@ -145,6 +177,7 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
                 <input
                   name="numero"
                   defaultValue={inicial?.numero ?? ""}
+                  placeholder="123"
                   className="campo"
                 />
               </Campo>
@@ -161,7 +194,9 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
               <Campo rotulo="Bairro" className="sm:col-span-2">
                 <input
                   name="bairro"
-                  defaultValue={inicial?.bairro ?? ""}
+                  value={bairro}
+                  onChange={(e) => setBairro(e.target.value)}
+                  placeholder="Bairro"
                   className="campo"
                 />
               </Campo>
@@ -169,7 +204,9 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
               <Campo rotulo="Cidade" className="sm:col-span-3">
                 <input
                   name="cidade"
-                  defaultValue={inicial?.cidade ?? ""}
+                  value={cidade}
+                  onChange={(e) => setCidade(e.target.value)}
+                  placeholder="Cidade"
                   className="campo"
                 />
               </Campo>
@@ -177,7 +214,8 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
               <Campo rotulo="UF" className="sm:col-span-1">
                 <select
                   name="estado"
-                  defaultValue={inicial?.estado ?? ""}
+                  value={estadoUf}
+                  onChange={(e) => setEstadoUf(e.target.value)}
                   className="campo"
                 >
                   <option value="">—</option>
@@ -201,15 +239,15 @@ export function FormularioCliente({ inicial }: { inicial?: ClienteInicial }) {
             />
           </Campo>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            {inicial && !inicial.temOrdens ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-borda">
+            {inicial ? (
               <FormConfirmar
                 action={excluirCliente}
                 mensagem={`Excluir o cliente ${inicial.nome}?`}
               >
                 <input type="hidden" name="id" value={inicial.id} />
                 <button type="submit" className="btn btn-perigo">
-                  <Trash2 size={15} /> Excluir
+                  <Trash2 size={15} /> Excluir cliente
                 </button>
               </FormConfirmar>
             ) : (

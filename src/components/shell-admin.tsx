@@ -16,10 +16,12 @@ import {
   X,
   FileText,
   Contact,
+  User,
 } from "lucide-react";
 import { Marca } from "@/components/marca";
 import { iniciais } from "@/lib/format";
 import type { Sessao } from "@/lib/auth";
+import { MeuPerfilModal } from "@/components/meu-perfil-modal";
 
 type ItemMenu = {
   href: string;
@@ -49,6 +51,7 @@ export function ShellAdmin({
   const pathname = usePathname();
   const [menuAberto, setMenuAberto] = useState(false);
   const [contaAberta, setContaAberta] = useState(false);
+  const [perfilAberto, setPerfilAberto] = useState(false);
 
   const itens: ItemMenu[] = [
     {
@@ -158,7 +161,6 @@ export function ShellAdmin({
       </Link>
 
       <div className="mt-auto space-y-2 pt-4">
-        {restaurarDemo}
         <form action="/api/sair" method="post">
           <button
             type="submit"
@@ -173,6 +175,12 @@ export function ShellAdmin({
 
   return (
     <div className="flex min-h-dvh">
+      <MeuPerfilModal
+        sessao={sessao}
+        aberto={perfilAberto}
+        aoFechar={() => setPerfilAberto(false)}
+      />
+
       {/* Sidebar fixa no desktop */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-borda bg-white lg:flex">
         <div className="border-b border-borda px-4 py-4">
@@ -259,12 +267,20 @@ export function ShellAdmin({
                   aria-expanded={contaAberta}
                   aria-haspopup="menu"
                 >
-                  <span
-                    className="grid h-8 w-8 place-items-center rounded-full text-xs font-bold text-white"
-                    style={{ background: sessao.corAvatar }}
-                  >
-                    {iniciais(sessao.nome)}
-                  </span>
+                  {sessao.foto ? (
+                    <img
+                      src={sessao.foto}
+                      alt={sessao.nome}
+                      className="h-8 w-8 rounded-full object-cover ring-2 ring-marca-500/20"
+                    />
+                  ) : (
+                    <span
+                      className="grid h-8 w-8 place-items-center rounded-full text-xs font-bold text-white"
+                      style={{ background: sessao.corAvatar }}
+                    >
+                      {iniciais(sessao.nome)}
+                    </span>
+                  )}
                   <span className="hidden text-left leading-tight sm:block">
                     <span className="block text-xs font-semibold text-texto">
                       {sessao.nome.split(" ")[0]}
@@ -287,10 +303,38 @@ export function ShellAdmin({
                       role="menu"
                       className="animar-entrada absolute right-0 z-20 mt-2 w-60 overflow-hidden rounded-xl border border-borda bg-white shadow-[var(--shadow-flutuante)]"
                     >
-                      <div className="border-b border-borda px-4 py-3">
-                        <p className="text-sm font-semibold text-texto">{sessao.nome}</p>
-                        <p className="truncate text-xs text-suave">{sessao.email}</p>
+                      <div className="border-b border-borda px-4 py-3 flex items-center gap-3">
+                        {sessao.foto ? (
+                          <img
+                            src={sessao.foto}
+                            alt={sessao.nome}
+                            className="h-9 w-9 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span
+                            className="grid h-9 w-9 place-items-center rounded-full text-xs font-bold text-white shrink-0"
+                            style={{ background: sessao.corAvatar }}
+                          >
+                            {iniciais(sessao.nome)}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-texto">{sessao.nome}</p>
+                          <p className="truncate text-xs text-suave">{sessao.email}</p>
+                        </div>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setContaAberta(false);
+                          setPerfilAberto(true);
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-suave hover:bg-marca-50 hover:text-marca-700 text-left transition-colors"
+                      >
+                        <User size={15} /> Meu Perfil
+                      </button>
+
                       <Link
                         href="/equipe"
                         className="flex items-center gap-2 px-4 py-2.5 text-sm text-suave hover:bg-marca-50 hover:text-marca-700"
