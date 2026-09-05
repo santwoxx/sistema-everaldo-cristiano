@@ -174,13 +174,19 @@ export default async function PaginaOrcamento({
               )}
 
               {orcamento.prazoDesejado && (
-                <Info rotulo="Prazo desejado">
-                  <span className="inline-flex items-center gap-1.5">
-                    <CalendarDays size={13} className="text-suave" />
+                <Info rotulo="Agendamento desejado">
+                  <span className="inline-flex items-center gap-1.5 font-bold text-slate-900">
+                    <CalendarDays size={14} className="text-emerald-700" />
                     {fmtData(orcamento.prazoDesejado)}
+                    {orcamento.horarioDesejado && (
+                      <span className="rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 font-mono text-xs font-extrabold text-emerald-800">
+                        às {orcamento.horarioDesejado}
+                      </span>
+                    )}
                   </span>
                 </Info>
               )}
+
 
               {enderecoCompleto && (
                 <div className="sm:col-span-2">

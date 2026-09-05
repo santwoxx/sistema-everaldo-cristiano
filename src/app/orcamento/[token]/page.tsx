@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import { CalendarClock, MessageCircle, ShieldCheck, Star, Wrench } from "lucide-react";
 import { dbLinks } from "@/lib/firestore";
 import { Marca } from "@/components/marca";
+import { obterAgendaConfig, gerarDiasDisponiveis } from "@/lib/agenda";
 import { FormularioOrcamentoPublico } from "./formulario";
 
 export const dynamic = "force-dynamic";
+
 
 export const metadata: Metadata = {
   title: "Solicite seu orçamento · EC Montagens de Móveis",
@@ -48,6 +50,9 @@ export default async function PaginaOrcamentoPublico({
   if (!indisponivel) {
     await dbLinks.incrementarAcessos(link.id);
   }
+
+  const agendaConfig = await obterAgendaConfig();
+  const diasDisponiveis = gerarDiasDisponiveis(agendaConfig);
 
   return (
     <div className="min-h-dvh bg-tela">
@@ -115,14 +120,14 @@ export default async function PaginaOrcamentoPublico({
                 Conte pra gente o que você precisa
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-suave">
-                Leva menos de 2 minutos. Os campos marcados com{" "}
-                <span className="text-rose-500">*</span> são obrigatórios.
+                Escolha a data e o horário na agenda abaixo e descreva o serviço.
               </p>
 
               <div className="mt-5">
-                <FormularioOrcamentoPublico token={token} />
+                <FormularioOrcamentoPublico token={token} diasDisponiveis={diasDisponiveis} />
               </div>
             </section>
+
 
             <ul className="mt-4 grid gap-3 sm:grid-cols-3">
               {diferenciais.map((d) => (

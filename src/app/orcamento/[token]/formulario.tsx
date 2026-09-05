@@ -1,15 +1,24 @@
 "use client";
 
 import { useActionState } from "react";
-import { CheckCircle2, Send } from "lucide-react";
+import { CalendarClock, CheckCircle2, Send } from "lucide-react";
 import { ESTADOS_BR, TIPOS_SERVICO } from "@/lib/constants";
 import { Aviso, BotaoEnviar, Campo } from "@/components/form";
 import {
   enviarOrcamentoPublico,
   type EstadoOrcamento,
 } from "@/app/actions/orcamentos";
+import { AgendaCliente } from "./agenda-cliente";
+import type { SlotDiaDisponivel } from "@/lib/agenda";
 
-export function FormularioOrcamentoPublico({ token }: { token: string }) {
+export function FormularioOrcamentoPublico({
+  token,
+  diasDisponiveis = [],
+}: {
+  token: string;
+  diasDisponiveis?: SlotDiaDisponivel[];
+}) {
+
   const [estado, acao] = useActionState<EstadoOrcamento, FormData>(
     enviarOrcamentoPublico,
     {}
@@ -137,10 +146,19 @@ export function FormularioOrcamentoPublico({ token }: { token: string }) {
           />
         </Campo>
 
-        <Campo rotulo="Data desejada para o serviço">
-          <input type="date" name="prazoDesejado" className="campo" />
-        </Campo>
+        {/* Agenda de Atendimento */}
+        <div className="pt-2">
+          <label className="rotulo mb-1.5 flex items-center gap-1.5 font-bold text-slate-900">
+            <CalendarClock size={16} className="text-emerald-700" />
+            Escolha a data e o horário para a montagem <span className="text-rose-500">*</span>
+          </label>
+          <p className="mb-3 text-xs text-slate-600">
+            Selecione no calendário interativo um dos dias e horários liberados para atendimento:
+          </p>
+          <AgendaCliente diasDisponiveis={diasDisponiveis} />
+        </div>
       </fieldset>
+
 
       {/* Endereço */}
       <fieldset className="space-y-4 border-t border-borda pt-5">

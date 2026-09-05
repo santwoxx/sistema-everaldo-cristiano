@@ -17,6 +17,8 @@ import { Etiqueta, Painel, Vazio } from "@/components/ui";
 import { BotaoCopiar, FormConfirmar } from "@/components/form";
 import { alternarLink, excluirLink } from "@/app/actions/links";
 import { GerarLink } from "./gerar-link";
+import { ConfigurarAgenda } from "./configurar-agenda";
+import { obterAgendaConfig, DIAS_SEMANA_NOMES } from "@/lib/agenda";
 
 export const metadata: Metadata = { title: "Link para Cliente" };
 export const dynamic = "force-dynamic";
@@ -24,10 +26,11 @@ export const dynamic = "force-dynamic";
 export default async function PaginaLinks() {
   const base = urlBase();
 
-  const [links, usuarios, orcamentos] = await Promise.all([
+  const [links, usuarios, orcamentos, agendaConfig] = await Promise.all([
     dbLinks.listar(),
     dbUsuarios.listar(),
     dbOrcamentos.listar(),
+    obterAgendaConfig(),
   ]);
 
   const usuariosMap = new Map(usuarios.map((u) => [u.id, u]));
@@ -45,8 +48,8 @@ export default async function PaginaLinks() {
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-2xl text-sm leading-relaxed text-suave">
-          Gere um link e envie ao cliente pelo WhatsApp. Ele preenche o formulário
-          de orçamento pelo próprio celular e a solicitação chega direto em{" "}
+          Gere links personalizados ou compartilhe o link direto com os clientes. Eles
+          agendam a data e o horário pelo celular e a solicitação chega direto em{" "}
           <Link href="/orcamentos" className="font-semibold text-marca-600 hover:underline">
             Orçamentos Recebidos
           </Link>
@@ -54,6 +57,44 @@ export default async function PaginaLinks() {
         </p>
         <GerarLink />
       </div>
+
+      {/* Card de Configuração da Agenda */}
+      <div className="rounded-2xl border-2 border-black bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-5 text-white shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0 max-w-xl">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-300">
+                <CalendarClock size={13} /> Agenda de Atendimentos
+              </span>
+            </div>
+            <h3 className="mt-2 text-base font-bold text-white">
+              Datas & Horários Disponíveis para o Cliente Agendar
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-300">
+              O cliente verá estes dias e horários no calendário do link de orçamento:
+            </p>
+
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
+              <div className="flex items-center gap-1.5 text-slate-200">
+                <span className="font-bold text-emerald-400">Dias de atendimento:</span>{" "}
+                {agendaConfig.diasSemana
+                  .map((id) => DIAS_SEMANA_NOMES.find((s) => s.id === id)?.sigla)
+                  .filter(Boolean)
+                  .join(", ")}
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-200">
+                <span className="font-bold text-emerald-400">Horários:</span>{" "}
+                <span className="font-mono font-bold text-emerald-200">
+                  {agendaConfig.horarios.join(" · ")}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <ConfigurarAgenda config={agendaConfig} />
+        </div>
+      </div>
+
 
       {links.length === 0 ? (
         <Painel semPadding>

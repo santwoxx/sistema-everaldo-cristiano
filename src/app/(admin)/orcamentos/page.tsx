@@ -149,13 +149,15 @@ export default async function PaginaOrcamentos({
                           </span>
                         )}
                         {o.prazoDesejado && (
-                          <span className="flex items-center gap-1">
-                            <CalendarDays size={12} /> deseja para{" "}
+                          <span className="flex items-center gap-1 font-semibold text-emerald-800">
+                            <CalendarDays size={12} className="text-emerald-600" />
                             {fmtData(o.prazoDesejado)}
+                            {o.horarioDesejado && ` às ${o.horarioDesejado}`}
                           </span>
                         )}
                       </div>
                     </div>
+
 
                     <div className="flex items-center gap-3">
                       <div className="text-right">

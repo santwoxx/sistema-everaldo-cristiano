@@ -136,6 +136,7 @@ export interface OrcamentoDoc {
   descricao: string;
   quantidadeItens: number;
   prazoDesejado?: string | null;
+  horarioDesejado?: string | null;
   itensJson: string;
   valorProposto?: number | null;
   status: StatusOrcamento;
@@ -157,8 +158,10 @@ export interface LinkPublicoDoc {
   acessos: number;
   envios: number;
   criadoPorId?: string | null;
+  agenda?: any;
   criadoEm: string;
 }
+
 
 export interface LancamentoDoc {
   id: string;

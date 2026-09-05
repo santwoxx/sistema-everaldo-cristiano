@@ -34,6 +34,7 @@ const esquemaPublico = z.object({
     .min(10, "Descreva o serviço com pelo menos 10 caracteres"),
   quantidadeItens: z.coerce.number().min(1).max(999).default(1),
   prazoDesejado: z.string().trim().optional(),
+  horarioDesejado: z.string().trim().optional(),
 });
 
 export type EstadoOrcamento = { erro?: string; protocolo?: string };
@@ -78,6 +79,7 @@ export async function enviarOrcamentoPublico(
       descricao: d.descricao,
       quantidadeItens: d.quantidadeItens,
       prazoDesejado: d.prazoDesejado ? new Date(`${d.prazoDesejado}T12:00:00`).toISOString() : null,
+      horarioDesejado: d.horarioDesejado || null,
       linkId: link.id,
       status: "NOVO",
       itensJson: "[]",
@@ -86,12 +88,17 @@ export async function enviarOrcamentoPublico(
 
   await dbLinks.incrementarEnvios(link.id);
 
+  const infoAgendamento = d.prazoDesejado
+    ? ` · Agendado: ${d.prazoDesejado}${d.horarioDesejado ? ` às ${d.horarioDesejado}` : ""}`
+    : "";
+
   await notificar({
     tipo: "ORCAMENTO",
-    titulo: `Novo orçamento de ${d.nomeContato}`,
-    mensagem: `${TIPOS_SERVICO[d.tipoServico as keyof typeof TIPOS_SERVICO] ?? d.tipoServico} · ${d.quantidadeItens} item(ns) · ${d.telefone}`,
+    titulo: `Novo orçamento agendado: ${d.nomeContato}`,
+    mensagem: `${TIPOS_SERVICO[d.tipoServico as keyof typeof TIPOS_SERVICO] ?? d.tipoServico}${infoAgendamento} · ${d.telefone}`,
     link: `/orcamentos/${orcamento.id}`,
   });
+
 
   revalidatePath("/orcamentos");
   revalidatePath("/painel");

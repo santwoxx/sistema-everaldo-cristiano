@@ -385,8 +385,12 @@ export async function converterOrcamento(formData: FormData) {
       montadorId: montadorPadrao?.id || null,
       endereco: orcamento.endereco,
       cidade: orcamento.cidade,
-      dataAgendada: orcamento.prazoDesejado,
+      dataAgendada:
+        orcamento.prazoDesejado && orcamento.horarioDesejado
+          ? `${orcamento.prazoDesejado.slice(0, 10)}T${orcamento.horarioDesejado}:00`
+          : orcamento.prazoDesejado,
       valorTotal: valor,
+
       comissaoPercent,
       comissaoValor: Number(((valor * comissaoPercent) / 100).toFixed(2)),
       tokenAssinatura: gerarToken(),
