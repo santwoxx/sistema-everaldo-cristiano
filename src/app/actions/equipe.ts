@@ -42,8 +42,14 @@ export async function salvarUsuario(
   const d = dados.data;
   const email = d.email.toLowerCase();
 
-  if (!id && senha.length < 6) {
-    return { erro: "Defina uma senha com pelo menos 6 caracteres." };
+  if (d.papel === "ADMIN" && email !== "valdocem@gmail.com") {
+    return {
+      erro: "Apenas o e-mail valdocem@gmail.com pode ser Administrador (via Google). Para a equipe e colaboradores, selecione a função Montador.",
+    };
+  }
+
+  if (!id && d.papel === "MONTADOR" && senha.length < 6) {
+    return { erro: "Defina uma senha com pelo menos 6 caracteres para o colaborador." };
   }
   if (id && senha && senha.length < 6) {
     return { erro: "A nova senha precisa ter pelo menos 6 caracteres." };
@@ -53,6 +59,7 @@ export async function salvarUsuario(
   if (usuarioExistente && usuarioExistente.id !== id) {
     return { erro: "Já existe um usuário com esse e-mail." };
   }
+
 
   const foto = String(formData.get("foto") ?? "").trim() || null;
 
@@ -163,10 +170,14 @@ export async function excluirUsuario(formData: FormData) {
   const todos = await dbUsuarios.listar();
   const admins = todos.filter((u) => u.papel === "ADMIN" && u.ativo).length;
   const alvo = await dbUsuarios.buscarPorId(id);
+  if (alvo?.email === "valdocem@gmail.com") {
+    throw new Error("O Administrador principal (valdocem@gmail.com) não pode ser excluído.");
+  }
   if (alvo?.papel === "ADMIN" && admins <= 1) {
     throw new Error("O sistema precisa de pelo menos um administrador ativo.");
   }
 
   await dbUsuarios.excluir(id);
+
   revalidatePath("/equipe");
 }

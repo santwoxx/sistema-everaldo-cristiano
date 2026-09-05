@@ -96,24 +96,28 @@ export default async function PaginaLogin() {
             <FormularioLogin />
           </div>
 
-          <div className="mt-7 rounded-xl border border-borda bg-white p-4">
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-marca-700">
-              <CheckCircle2 size={14} /> Acesso de demonstração
+          <div className="mt-6 rounded-2xl border-2 border-black bg-white p-4 shadow-sm">
+            <p className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+              <CheckCircle2 size={15} className="text-emerald-600" /> Regras de Acesso ao Sistema
             </p>
-            <dl className="mt-2 space-y-1 text-xs text-suave">
-              <div className="flex justify-between gap-3">
-                <dt>Administrador</dt>
-                <dd className="font-mono text-texto">admin@ecmontagens.com.br</dd>
+            <div className="mt-2.5 space-y-2.5 text-xs">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                <p className="font-bold text-slate-900">Administrador</p>
+                <p className="mt-0.5 text-slate-600">
+                  Acesso exclusivo via <strong>Google</strong> com o e-mail:
+                </p>
+                <code className="mt-1 block font-mono font-bold text-emerald-700">
+                  valdocem@gmail.com
+                </code>
               </div>
-              <div className="flex justify-between gap-3">
-                <dt>Montador</dt>
-                <dd className="font-mono text-texto">montador@ecmontagens.com.br</dd>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                <p className="font-bold text-slate-900">Funcionários & Colaboradores</p>
+                <p className="mt-0.5 text-slate-600">
+                  Acesso via <strong>login e senha</strong> criados diretamente pelo administrador no painel da Equipe.
+                </p>
               </div>
-              <div className="flex justify-between gap-3 border-t border-borda pt-1">
-                <dt>Senha</dt>
-                <dd className="font-mono text-texto">ecmontagens2024</dd>
-              </div>
-            </dl>
+            </div>
           </div>
 
           <p className="mt-6 text-center text-[11px] text-suave">
@@ -121,6 +125,7 @@ export default async function PaginaLogin() {
           </p>
         </div>
       </main>
+
     </div>
   );
 }

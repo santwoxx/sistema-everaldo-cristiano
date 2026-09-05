@@ -53,14 +53,14 @@ export async function semear(opcoes: { comDemo?: boolean } = {}) {
 
   const senhaPadrao = process.env.ADMIN_SENHA || "ecmontagens2024";
   const senhaHash = await bcrypt.hash(senhaPadrao, 10);
-  const adminEmail = (process.env.ADMIN_EMAIL || "admin@ecmontagens.com.br").toLowerCase();
+  const adminEmail = (process.env.ADMIN_EMAIL || "valdocem@gmail.com").toLowerCase();
 
   // Limpa a base antes de semear
   await limparBase();
 
   /* ---------------------------------------------------------------- Equipe */
   const admin = await dbUsuarios.criar({
-    nome: process.env.ADMIN_NOME || "Edson Cristiano",
+    nome: process.env.ADMIN_NOME || "Valdo Novaes",
     email: adminEmail,
     senhaHash,
     papel: "ADMIN",

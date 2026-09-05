@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { autenticar, criarSessao, encerrarSessao } from "@/lib/auth";
+import { autenticar, autenticarGoogle, criarSessao, encerrarSessao } from "@/lib/auth";
 import type { Papel } from "@/lib/constants";
 
 const esquema = z.object({
@@ -25,7 +25,13 @@ export async function entrar(
     return { erro: dados.error.issues[0]?.message ?? "Dados inválidos" };
   }
 
-  const usuario = await autenticar(dados.data.email, dados.data.senha);
+  let usuario;
+  try {
+    usuario = await autenticar(dados.data.email, dados.data.senha);
+  } catch (err: any) {
+    return { erro: err.message || "Erro ao realizar login." };
+  }
+
   if (!usuario) {
     return { erro: "E-mail ou senha incorretos. Verifique e tente novamente." };
   }
@@ -42,7 +48,32 @@ export async function entrar(
   redirect(usuario.papel === "ADMIN" ? "/painel" : "/montador");
 }
 
+export async function entrarComGoogle(dados: {
+  email: string;
+  nome?: string | null;
+  foto?: string | null;
+  idToken?: string | null;
+}): Promise<{ erro?: string; sucesso?: boolean }> {
+  try {
+    const usuario = await autenticarGoogle(dados);
+
+    await criarSessao({
+      id: usuario.id,
+      nome: usuario.nome,
+      email: usuario.email,
+      papel: "ADMIN",
+      corAvatar: usuario.corAvatar,
+      foto: usuario.foto ?? null,
+    });
+
+    return { sucesso: true };
+  } catch (err: any) {
+    return { erro: err.message || "Falha ao autenticar com o Google." };
+  }
+}
+
 export async function sair() {
   await encerrarSessao();
   redirect("/login");
 }
+

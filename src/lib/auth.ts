@@ -95,29 +95,102 @@ export async function exigirMontador(): Promise<Sessao> {
   return exigirSessao();
 }
 
-export async function autenticar(email: string, senha: string): Promise<UsuarioDoc | null> {
-  const emailNorm = email.trim().toLowerCase();
-  let usuario = await dbUsuarios.buscarPorEmail(emailNorm);
+export const EMAIL_ADMIN_OFICIAL = "valdocem@gmail.com";
 
-  if (!usuario) {
-    // Se o banco estiver vazio ou o admin ainda não tiver sido inicializado, auto-semeia
-    const todos = await dbUsuarios.listar();
-    if (todos.length === 0 || emailNorm === "admin@ecmontagens.com.br") {
-      try {
-        const { semear } = await import("@/lib/semear");
-        await semear({ comDemo: false });
-        usuario = await dbUsuarios.buscarPorEmail(emailNorm);
-      } catch (err) {
-        console.error("Erro ao auto-popular banco:", err);
+export async function autenticarGoogle(dados: {
+  email: string;
+  nome?: string | null;
+  foto?: string | null;
+  idToken?: string | null;
+}): Promise<UsuarioDoc> {
+  const emailNorm = dados.email.trim().toLowerCase();
+
+  // Regra: apenas valdocem@gmail.com tem autorização para entrar via Google
+  if (emailNorm !== EMAIL_ADMIN_OFICIAL) {
+    throw new Error(
+      `Acesso restrito. Apenas o administrador autorizado (${EMAIL_ADMIN_OFICIAL}) pode entrar via Google. Funcionários e colaboradores devem entrar com e-mail e senha cadastrados.`
+    );
+  }
+
+  // Se houver idToken do Firebase, validação do payload
+  if (dados.idToken) {
+    try {
+      const { decodeJwt } = await import("jose");
+      const payload = decodeJwt(dados.idToken);
+      if (payload.email && String(payload.email).toLowerCase() !== EMAIL_ADMIN_OFICIAL) {
+        throw new Error(`Token inválido: o e-mail não corresponde a ${EMAIL_ADMIN_OFICIAL}.`);
       }
+    } catch (tokenErr: any) {
+      if (tokenErr?.message?.includes("não corresponde")) throw tokenErr;
     }
   }
 
-  if (!usuario || !usuario.ativo) return null;
+  let usuario = await dbUsuarios.buscarPorEmail(emailNorm);
+
+  if (!usuario) {
+    // Se não existir o registro do administrador, cria-o no Firestore
+    usuario = await dbUsuarios.criar({
+      nome: dados.nome || "Valdo Novaes",
+      email: emailNorm,
+      senhaHash: "", // Administrador entra exclusivamente com Google
+      papel: "ADMIN",
+      telefone: "(11) 98877-1200",
+      documento: null,
+      comissaoPadrao: 0,
+      corAvatar: "#0f6a31",
+      foto: dados.foto || null,
+      ativo: true,
+    });
+  } else {
+    // Garante que o papel é ADMIN e atualiza foto e último acesso
+    const atualizacoes: Partial<UsuarioDoc> = {
+      papel: "ADMIN",
+      ativo: true,
+      ultimoAcesso: new Date().toISOString(),
+    };
+    if (dados.foto) {
+      atualizacoes.foto = dados.foto;
+    }
+    if (dados.nome && (usuario.nome === "Administrador" || !usuario.nome)) {
+      atualizacoes.nome = dados.nome;
+    }
+    await dbUsuarios.atualizar(usuario.id, atualizacoes);
+    usuario = { ...usuario, ...atualizacoes };
+  }
+
+  return usuario;
+}
+
+export async function autenticar(email: string, senha: string): Promise<UsuarioDoc | null> {
+  const emailNorm = email.trim().toLowerCase();
+
+  // Regra 1: Administrador só entra via Google com valdocem@gmail.com
+  if (emailNorm === EMAIL_ADMIN_OFICIAL) {
+    throw new Error(
+      "Contas de administrador entram exclusivamente via Google. Por favor, clique no botão 'Entrar como Administrador com Google'."
+    );
+  }
+
+  let usuario = await dbUsuarios.buscarPorEmail(emailNorm);
+
+  if (!usuario) {
+    return null;
+  }
+
+  // Se o usuário for ADMIN, também bloqueia a entrada por senha
+  if (usuario.papel === "ADMIN") {
+    throw new Error(
+      "Contas de administrador entram exclusivamente via Google. Por favor, clique no botão 'Entrar como Administrador com Google'."
+    );
+  }
+
+  if (!usuario.ativo) {
+    throw new Error("Este usuário está inativo no sistema. Consulte o administrador.");
+  }
 
   const confere = await conferirSenha(senha, usuario.senhaHash);
   if (!confere) {
-    // Caso padrão de emergência
+    // Caso padrão de teste de emergência para montadores
     if (senha === "ecmontagens2024" || senha === "montador123") {
       const novoHash = await hashSenha(senha);
       await dbUsuarios.atualizar(usuario.id, { senhaHash: novoHash });
@@ -131,6 +204,7 @@ export async function autenticar(email: string, senha: string): Promise<UsuarioD
   });
   return usuario;
 }
+
 
 /** Dados de auditoria gravados junto com cada assinatura digital. */
 export async function dadosAuditoria(): Promise<{ ip: string; userAgent: string }> {
