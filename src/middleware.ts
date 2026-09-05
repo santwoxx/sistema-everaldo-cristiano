@@ -4,7 +4,7 @@ import { jwtVerify } from "jose";
 const COOKIE_SESSAO = "ec_sessao";
 
 /** Rotas que qualquer visitante acessa sem login. */
-const PUBLICAS = ["/login", "/orcamento", "/assinar", "/comprovante", "/api/sair"];
+const PUBLICAS = ["/", "/login", "/orcamento", "/assinar", "/comprovante", "/api/sair"];
 
 /**
  * Primeira barreira de acesso: bloqueia rotas internas antes mesmo de
