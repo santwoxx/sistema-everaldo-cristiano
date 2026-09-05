@@ -1,0 +1,281 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   EC Montagens de Moveis - tokens da identidade visual
+   Verde institucional + dourado do logotipo, sobre fundo neutro claro.
+   ========================================================================== */
+@theme {
+  --font-sans: var(--fonte-marca), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+
+  --color-marca-50: #ecfdf3;
+  --color-marca-100: #d1fadf;
+  --color-marca-200: #a6f4c5;
+  --color-marca-300: #6ce9a6;
+  --color-marca-400: #32d583;
+  --color-marca-500: #16a34a;
+  --color-marca-600: #12833c;
+  --color-marca-700: #0f6a31;
+  --color-marca-800: #0d5228;
+  --color-marca-900: #0a3d1f;
+  --color-marca-950: #052e16;
+
+  --color-ouro-400: #f2b544;
+  --color-ouro-500: #e09b1f;
+  --color-ouro-600: #b87a12;
+
+  --color-tela: #f5f7f6;
+  --color-borda: #e8ecea;
+  --color-texto: #10201a;
+  --color-suave: #67807a;
+
+  --radius-card: 16px;
+  --shadow-card: 0 1px 2px rgb(16 32 26 / 0.04), 0 6px 20px -12px rgb(16 32 26 / 0.14);
+  --shadow-flutuante: 0 10px 40px -12px rgb(16 32 26 / 0.24);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-borda);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-tela);
+    color: var(--color-texto);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Evita zoom automatico do iOS ao focar campos no celular. */
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+
+  ::selection {
+    background: var(--color-marca-200);
+    color: var(--color-marca-900);
+  }
+}
+
+@layer components {
+  .cartao {
+    background: #fff;
+    border: 1px solid var(--color-borda);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .rotulo {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-suave);
+  }
+
+  /* --- Formularios --------------------------------------------------- */
+  .campo {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--color-borda);
+    background: #fff;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.9rem;
+    color: var(--color-texto);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .campo::placeholder {
+    color: #9db0aa;
+  }
+  .campo:focus {
+    border-color: var(--color-marca-400);
+    box-shadow: 0 0 0 3px var(--color-marca-100);
+  }
+  .campo:disabled {
+    background: #f6f8f7;
+    color: var(--color-suave);
+  }
+  .campo-erro {
+    border-color: #f43f5e;
+  }
+
+  .etiqueta {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #3c5750;
+  }
+
+  /* --- Botoes --------------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 10px;
+    padding: 0.6rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s,
+      box-shadow 0.15s, transform 0.1s;
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-principal {
+    background: var(--color-marca-500);
+    color: #fff;
+    box-shadow: 0 1px 2px rgb(16 32 26 / 0.14);
+  }
+  .btn-principal:hover:not(:disabled) {
+    background: var(--color-marca-600);
+  }
+
+  .btn-claro {
+    background: #fff;
+    color: var(--color-marca-700);
+    border: 1px solid var(--color-borda);
+  }
+  .btn-claro:hover:not(:disabled) {
+    background: var(--color-marca-50);
+    border-color: var(--color-marca-200);
+  }
+
+  .btn-fantasma {
+    background: transparent;
+    color: var(--color-suave);
+  }
+  .btn-fantasma:hover:not(:disabled) {
+    background: #eef2f0;
+    color: var(--color-texto);
+  }
+
+  .btn-perigo {
+    background: #fff;
+    color: #be123c;
+    border: 1px solid #fecdd3;
+  }
+  .btn-perigo:hover:not(:disabled) {
+    background: #fff1f2;
+  }
+
+  /* --- Selos de status ------------------------------------------------ */
+  .selo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    --tw-ring-inset: inset;
+    box-shadow: inset 0 0 0 1px currentColor;
+  }
+
+  /* --- Tabelas -------------------------------------------------------- */
+  .tabela {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
+  }
+  .tabela thead th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-suave);
+    border-bottom: 1px solid var(--color-borda);
+  }
+  .tabela tbody td {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid #f1f4f3;
+    vertical-align: middle;
+  }
+  .tabela tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .tabela tbody tr:hover {
+    background: #fafbfa;
+  }
+}
+
+@layer utilities {
+  .rolagem-fina {
+    scrollbar-width: thin;
+    scrollbar-color: #cfdad6 transparent;
+  }
+  .rolagem-fina::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .rolagem-fina::-webkit-scrollbar-thumb {
+    background: #cfdad6;
+    border-radius: 999px;
+  }
+
+  .area-assinatura {
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  .animar-entrada {
+    animation: entrada 0.25s ease-out both;
+  }
+  @keyframes entrada {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* ==========================================================================
+   Impressao do comprovante assinado
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  body {
+    background: #fff !important;
+  }
+  .sem-impressao {
+    display: none !important;
+  }
+  .quebra-pagina {
+    break-inside: avoid;
+  }
+  .cartao {
+    box-shadow: none !important;
+    border-color: #d6ded9 !important;
+  }
+}

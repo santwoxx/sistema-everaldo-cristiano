@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="EC Montagens de Moveis">
+  <title>EC Montagens de Moveis</title>
+  <defs>
+    <linearGradient id="ecLaranja" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="55%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#fbbf24" />
+    </linearGradient>
+    <linearGradient id="ecVerde" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="45%" stop-color="#84cc16" />
+      <stop offset="100%" stop-color="#16a34a" />
+    </linearGradient>
+    <linearGradient id="ecAro" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="35%" stop-color="#fbbf24" />
+      <stop offset="70%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <linearGradient id="ecOuro" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fde68a" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+  </defs>
+
+  <!-- disco -->
+  <circle cx="100" cy="100" r="99" fill="#050505" />
+  <circle cx="100" cy="100" r="94" fill="none" stroke="url(#ecAro)" stroke-width="3.5" />
+  <circle cx="100" cy="100" r="86" fill="none" stroke="#1c1c1c" stroke-width="1.5" />
+
+  <!-- monograma EC -->
+  <g transform="translate(0,-6)">
+    <!-- E -->
+    <path d="M44 56 H96 V74 H66 V90 H92 V107 H66 V124 H97 V142 H44 Z" fill="url(#ecLaranja)" />
+    <!-- C -->
+    <path d="M156 63 A46 46 0 1 0 156 135 L156 116 A29 29 0 1 1 156 82 Z" fill="url(#ecVerde)" />
+    <!-- chave de fenda central -->
+    <rect x="115" y="52" width="9" height="52" rx="2" fill="url(#ecOuro)" />
+    <path d="M113 104 h13 a4 4 0 0 1 4 4 v22 a10.5 10.5 0 0 1 -21 0 v-22 a4 4 0 0 1 4 -4 z" fill="url(#ecOuro)" />
+    <circle cx="119.5" cy="126" r="4.5" fill="#050505" opacity="0.55" />
+  </g>
+
+  <!-- assinatura -->
+  <rect x="42" y="150" width="116" height="1.6" fill="url(#ecOuro)" opacity="0.85" />
+  <text x="100" y="167" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif"
+        font-size="16.5" font-weight="900" letter-spacing="0.5" fill="url(#ecOuro)">MONTAGENS</text>
+  <rect x="42" y="173" width="116" height="1.6" fill="url(#ecOuro)" opacity="0.85" />
+  <text x="100" y="186" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-size="8" font-weight="700" letter-spacing="2.6" fill="#e3b341">DE MOVEIS</text>
+</svg>

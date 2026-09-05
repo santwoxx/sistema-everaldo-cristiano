@@ -1,0 +1,13 @@
+{
+  "name": "EC Montagens de Moveis",
+  "short_name": "EC Montagens",
+  "description": "Gestao financeira, ordens de servico e assinatura digital.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f6",
+  "theme_color": "#16a34a",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

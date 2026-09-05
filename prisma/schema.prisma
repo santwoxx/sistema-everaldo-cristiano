@@ -1,0 +1,257 @@
+// EC Montagens de Moveis - Schema de dados
+// Compativel com SQLite (padrao) e PostgreSQL: para migrar para Postgres,
+// basta trocar provider = "postgresql" abaixo e ajustar a DATABASE_URL.
+// Nao usamos enum/Json/array nativos justamente para manter essa portabilidade.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Usuarios: administrador e montadores
+// ---------------------------------------------------------------------------
+model Usuario {
+  id             String    @id @default(cuid())
+  nome           String
+  email          String    @unique
+  senhaHash      String
+  papel          String    @default("MONTADOR") // ADMIN | MONTADOR
+  telefone       String?
+  documento      String?
+  comissaoPadrao Float     @default(30) // % sobre o valor da OS
+  ativo          Boolean   @default(true)
+  corAvatar      String    @default("#16a34a")
+  ultimoAcesso   DateTime?
+  criadoEm       DateTime  @default(now())
+  atualizadoEm   DateTime  @updatedAt
+
+  ordens       OrdemServico[] @relation("MontadorDaOrdem")
+  linksCriados LinkPublico[]
+  lancamentos  Lancamento[]
+
+  @@index([papel])
+}
+
+// ---------------------------------------------------------------------------
+// Clientes
+// ---------------------------------------------------------------------------
+model Cliente {
+  id           String   @id @default(cuid())
+  nome         String
+  telefone     String?
+  email        String?
+  documento    String?
+  cep          String?
+  endereco     String?
+  numero       String?
+  complemento  String?
+  bairro       String?
+  cidade       String?
+  estado       String?
+  observacoes  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  ordens     OrdemServico[]
+  orcamentos Orcamento[]
+
+  @@index([nome])
+}
+
+// ---------------------------------------------------------------------------
+// Link publico gerado pelo admin e enviado ao cliente
+// ---------------------------------------------------------------------------
+model LinkPublico {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  titulo      String    @default("Solicitacao de Orcamento")
+  mensagem    String?
+  ativo       Boolean   @default(true)
+  expiraEm    DateTime?
+  acessos     Int       @default(0)
+  envios      Int       @default(0)
+  criadoPor   Usuario?  @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+  criadoPorId String?
+  criadoEm    DateTime  @default(now())
+
+  orcamentos Orcamento[]
+}
+
+// ---------------------------------------------------------------------------
+// Orcamentos recebidos do cliente pelo link publico
+// ---------------------------------------------------------------------------
+model Orcamento {
+  id                  String    @id @default(cuid())
+  numero              Int       @unique
+  nomeContato         String
+  telefone            String
+  email               String?
+  documento           String?
+  cep                 String?
+  endereco            String?
+  cidade              String?
+  estado              String?
+  tipoServico         String    @default("MONTAGEM") // MONTAGEM | DESMONTAGEM | PLANEJADOS | MODULADOS | REPARO | OUTRO
+  descricao           String
+  quantidadeItens     Int       @default(1)
+  prazoDesejado       DateTime?
+  itensJson           String    @default("[]") // [{descricao, quantidade}]
+  valorProposto       Float?
+  status              String    @default("NOVO") // NOVO | EM_ANALISE | PROPOSTA_ENVIADA | APROVADO | RECUSADO | CONVERTIDO
+  observacoesInternas String?
+  respondidoEm        DateTime?
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  cliente   Cliente?      @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  clienteId String?
+  link      LinkPublico?  @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  linkId    String?
+  ordem     OrdemServico?
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Ordem de servico
+// ---------------------------------------------------------------------------
+model OrdemServico {
+  id                  String    @id @default(cuid())
+  numero              Int       @unique
+  titulo              String
+  descricao           String?
+  endereco            String?
+  cidade              String?
+  status              String    @default("AGENDADA") // AGENDADA | EM_ANDAMENTO | AGUARDANDO_ASSINATURA | CONCLUIDA | CANCELADA
+  dataAgendada        DateTime?
+  dataInicio          DateTime?
+  dataConclusao       DateTime?
+  valorTotal          Float     @default(0)
+  comissaoPercent     Float     @default(30)
+  comissaoValor       Float     @default(0)
+  formaPagamento      String    @default("PIX") // PIX | DINHEIRO | CARTAO | TRANSFERENCIA | BOLETO
+  pago                Boolean   @default(false)
+  observacoes         String?
+  tokenAssinatura     String    @unique
+  avaliacaoNota       Int?
+  avaliacaoComentario String?
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  cliente     Cliente    @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  clienteId   String
+  montador    Usuario?   @relation("MontadorDaOrdem", fields: [montadorId], references: [id], onDelete: SetNull)
+  montadorId  String?
+  orcamento   Orcamento? @relation(fields: [orcamentoId], references: [id], onDelete: SetNull)
+  orcamentoId String?    @unique
+
+  itens       ItemOrdem[]
+  checklist   ChecklistItem[]
+  assinaturas Assinatura[]
+  fotos       FotoOrdem[]
+  lancamentos Lancamento[]
+
+  @@index([status])
+  @@index([montadorId])
+}
+
+model ItemOrdem {
+  id            String       @id @default(cuid())
+  descricao     String
+  quantidade    Float        @default(1)
+  valorUnitario Float        @default(0)
+  ordem         OrdemServico @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  ordemId       String
+}
+
+model ChecklistItem {
+  id         String       @id @default(cuid())
+  descricao  String
+  concluido  Boolean      @default(false)
+  ordemIndex Int          @default(0)
+  ordem      OrdemServico @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  ordemId    String
+}
+
+model FotoOrdem {
+  id       String       @id @default(cuid())
+  dataUrl  String // imagem em base64 (data URL)
+  legenda  String?
+  etapa    String       @default("DEPOIS") // ANTES | DEPOIS
+  criadoEm DateTime     @default(now())
+  ordem    OrdemServico @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  ordemId  String
+}
+
+// ---------------------------------------------------------------------------
+// Assinatura digital (montador e cliente) com trilha de auditoria
+// ---------------------------------------------------------------------------
+model Assinatura {
+  id         String       @id @default(cuid())
+  tipo       String // MONTADOR | CLIENTE
+  nome       String
+  documento  String?
+  imagem     String // data URL PNG do traco
+  hash       String // SHA-256 do conteudo assinado (integridade)
+  ip         String?
+  userAgent  String?
+  assinadoEm DateTime     @default(now())
+  ordem      OrdemServico @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  ordemId    String
+
+  @@unique([ordemId, tipo])
+}
+
+// ---------------------------------------------------------------------------
+// Financeiro
+// ---------------------------------------------------------------------------
+model Lancamento {
+  id             String   @id @default(cuid())
+  tipo           String // RECEITA | DESPESA
+  categoria      String   @default("SERVICO") // SERVICO | COMISSAO | MATERIAL | TRANSPORTE | FERRAMENTA | ADMINISTRATIVO | IMPOSTO | OUTRO
+  descricao      String
+  valor          Float
+  data           DateTime @default(now())
+  status         String   @default("CONFIRMADO") // PENDENTE | CONFIRMADO | CANCELADO
+  formaPagamento String   @default("PIX")
+  observacoes    String?
+  automatico     Boolean  @default(false) // gerado pelo sistema ao concluir a OS
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  ordem      OrdemServico? @relation(fields: [ordemId], references: [id], onDelete: SetNull)
+  ordemId    String?
+  montador   Usuario?      @relation(fields: [montadorId], references: [id], onDelete: SetNull)
+  montadorId String?
+
+  @@index([tipo, status])
+  @@index([data])
+}
+
+// ---------------------------------------------------------------------------
+// Notificacoes do painel administrativo
+// ---------------------------------------------------------------------------
+model Notificacao {
+  id       String   @id @default(cuid())
+  tipo     String // ORCAMENTO | ASSINATURA | OS_CONCLUIDA | FINANCEIRO
+  titulo   String
+  mensagem String
+  link     String?
+  lida     Boolean  @default(false)
+  criadoEm DateTime @default(now())
+
+  @@index([lida])
+}
+
+// ---------------------------------------------------------------------------
+// Configuracoes da empresa (chave/valor)
+// ---------------------------------------------------------------------------
+model Config {
+  chave String @id
+  valor String
+}
