@@ -72,7 +72,30 @@ export async function semear(opcoes: { comDemo?: boolean } = {}) {
   });
 
   if (!comDemo) {
-    await dbConfig.definir("empresa", "EC Montagens de Móveis");
+    await Promise.all([
+      dbUsuarios.criar({
+        nome: "Everaldo Souza",
+        email: "montador@ecmontagens.com.br",
+        senhaHash,
+        papel: "MONTADOR",
+        telefone: "(11) 99461-3388",
+        documento: "184.552.339-04",
+        comissaoPadrao: 35,
+        corAvatar: "#ea580c",
+        ativo: true,
+      }),
+      dbConfig.definir("empresa", "EC Montagens de Móveis"),
+      dbLinks.criar({
+        token: token(12),
+        titulo: "Solicitação de Orçamento — EC Montagens",
+        mensagem:
+          "Preencha os dados do seu móvel e retornamos com o orçamento em até 24 horas úteis.",
+        criadoPorId: admin.id,
+        acessos: 0,
+        envios: 0,
+        ativo: true,
+      }),
+    ]);
     return { admin, senha: senhaPadrao };
   }
 

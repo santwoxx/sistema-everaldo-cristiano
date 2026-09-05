@@ -103,7 +103,7 @@ export async function autenticar(email: string, senha: string): Promise<UsuarioD
     if (todos.length === 0 || emailNorm === "admin@ecmontagens.com.br") {
       try {
         const { semear } = await import("@/lib/semear");
-        await semear({ comDemo: true });
+        await semear({ comDemo: false });
         usuario = await dbUsuarios.buscarPorEmail(emailNorm);
       } catch (err) {
         console.error("Erro ao auto-popular banco:", err);
