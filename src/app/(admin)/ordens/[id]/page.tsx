@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowRight,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
@@ -13,7 +14,13 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import {
+  dbOrdens,
+  dbClientes,
+  dbUsuarios,
+  dbOrcamentos,
+  dbLancamentos,
+} from "@/lib/firestore";
 import { FORMAS_PAGAMENTO, STATUS_OS } from "@/lib/constants";
 import {
   data as fmtData,
@@ -41,10 +48,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const os = await prisma.ordemServico.findUnique({
-    where: { id },
-    select: { numero: true, titulo: true },
-  });
+  const os = await dbOrdens.buscarPorId(id);
   return { title: os ? `${osNumero(os.numero)} · ${os.titulo}` : "Ordem de serviço" };
 }
 
@@ -55,36 +59,32 @@ export default async function PaginaOrdem({
 }) {
   const { id } = await params;
 
-  const [os, clientes, montadores] = await Promise.all([
-    prisma.ordemServico.findUnique({
-      where: { id },
-      include: {
-        cliente: true,
-        montador: true,
-        itens: { orderBy: { id: "asc" } },
-        checklist: { orderBy: { ordemIndex: "asc" } },
-        assinaturas: { orderBy: { assinadoEm: "asc" } },
-        fotos: { orderBy: { criadoEm: "asc" } },
-        orcamento: { select: { id: true, numero: true } },
-        lancamentos: { orderBy: { data: "desc" } },
-      },
-    }),
-    prisma.cliente.findMany({
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true, endereco: true, numero: true, cidade: true },
-    }),
-    prisma.usuario.findMany({
-      where: { papel: "MONTADOR", ativo: true },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true, comissaoPadrao: true },
-    }),
-  ]);
+  const [os, todosClientes, todosMontadores, todosOrcamentos, todosLancamentos] =
+    await Promise.all([
+      dbOrdens.buscarPorId(id),
+      dbClientes.listar(),
+      dbUsuarios.listar({ papel: "MONTADOR", ativo: true }),
+      dbOrcamentos.listar(),
+      dbLancamentos.listar({ ordemId: id }),
+    ]);
 
   if (!os) notFound();
 
+  const cliente = todosClientes.find((c) => c.id === os.clienteId);
+  const montador = os.montadorId
+    ? todosMontadores.find((m) => m.id === os.montadorId)
+    : null;
+  const orcamento = os.orcamentoId
+    ? todosOrcamentos.find((orc) => orc.id === os.orcamentoId)
+    : null;
+
   const linkAssinatura = `${urlBase()}/assinar/${os.tokenAssinatura}`;
-  const concluidos = os.checklist.filter((c) => c.concluido).length;
-  const lucro = os.valorTotal - os.comissaoValor;
+  const checklist = os.checklist || [];
+  const concluidos = checklist.filter((c) => c.concluido).length;
+  const itens = os.itens || [];
+  const assinaturas = os.assinaturas || [];
+  const fotos = os.fotos || [];
+  const lucro = (os.valorTotal || 0) - (os.comissaoValor || 0);
 
   return (
     <>
@@ -114,10 +114,10 @@ export default async function PaginaOrdem({
                 </Etiqueta>
               )
             )}
-            {os.orcamento && (
-              <Link href={`/orcamentos/${os.orcamento.id}`}>
+            {orcamento && (
+              <Link href={`/orcamentos/${orcamento.id}`}>
                 <Etiqueta cor="bg-sky-50 text-sky-700 ring-sky-200">
-                  Vindo do ORC-{String(os.orcamento.numero).padStart(4, "0")}
+                  Vindo do ORC-{String(orcamento.numero).padStart(4, "0")}
                 </Etiqueta>
               </Link>
             )}
@@ -138,22 +138,32 @@ export default async function PaginaOrdem({
           </Link>
 
           <FormularioOrdem
-            clientes={clientes}
-            montadores={montadores}
+            clientes={todosClientes.map((c) => ({
+              id: c.id,
+              nome: c.nome,
+              endereco: c.endereco ?? null,
+              numero: c.numero ?? null,
+              cidade: c.cidade ?? null,
+            }))}
+            montadores={todosMontadores.map((m) => ({
+              id: m.id,
+              nome: m.nome,
+              comissaoPadrao: m.comissaoPadrao,
+            }))}
             inicial={{
               id: os.id,
               titulo: os.titulo,
-              descricao: os.descricao,
+              descricao: os.descricao ?? null,
               clienteId: os.clienteId,
-              montadorId: os.montadorId,
-              endereco: os.endereco,
-              cidade: os.cidade,
-              dataAgendada: os.dataAgendada?.toISOString() ?? null,
+              montadorId: os.montadorId ?? null,
+              endereco: os.endereco ?? null,
+              cidade: os.cidade ?? null,
+              dataAgendada: os.dataAgendada ?? null,
               valorTotal: os.valorTotal,
               comissaoPercent: os.comissaoPercent,
               formaPagamento: os.formaPagamento,
-              observacoes: os.observacoes,
-              temItens: os.itens.length > 0,
+              observacoes: os.observacoes ?? null,
+              temItens: itens.length > 0,
             }}
             rotuloBotao="Editar OS"
           />
@@ -167,22 +177,22 @@ export default async function PaginaOrdem({
             <dl className="grid gap-4 sm:grid-cols-2">
               <Info rotulo="Cliente">
                 <Link
-                  href={`/clientes?q=${encodeURIComponent(os.cliente.nome)}`}
+                  href={`/clientes?q=${encodeURIComponent(cliente?.nome || "")}`}
                   className="hover:text-marca-600 hover:underline"
                 >
-                  {os.cliente.nome}
+                  {cliente?.nome || "Cliente"}
                 </Link>
               </Info>
 
               <Info rotulo="Contato">
-                {os.cliente.telefone ? (
+                {cliente?.telefone ? (
                   <a
-                    href={`https://wa.me/${whatsapp(os.cliente.telefone)}`}
+                    href={`https://wa.me/${whatsapp(cliente.telefone)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 hover:text-marca-600"
                   >
-                    <Phone size={13} /> {fmtTelefone(os.cliente.telefone)}
+                    <Phone size={13} /> {fmtTelefone(cliente.telefone)}
                   </a>
                 ) : (
                   <span className="text-suave">Não informado</span>
@@ -190,15 +200,15 @@ export default async function PaginaOrdem({
               </Info>
 
               <Info rotulo="Montador">
-                {os.montador ? (
+                {montador ? (
                   <span className="inline-flex items-center gap-2">
                     <span
                       className="grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold text-white"
-                      style={{ background: os.montador.corAvatar }}
+                      style={{ background: montador.corAvatar }}
                     >
-                      {iniciais(os.montador.nome)}
+                      {iniciais(montador.nome)}
                     </span>
-                    {os.montador.nome}
+                    {montador.nome}
                   </span>
                 ) : (
                   <span className="text-suave">Não atribuído</span>
@@ -259,7 +269,7 @@ export default async function PaginaOrdem({
 
           <ItensOrdem
             ordemId={os.id}
-            itens={os.itens.map((i) => ({
+            itens={itens.map((i) => ({
               id: i.id,
               descricao: i.descricao,
               quantidade: i.quantidade,
@@ -271,7 +281,7 @@ export default async function PaginaOrdem({
 
           <ChecklistOrdem
             ordemId={os.id}
-            itens={os.checklist.map((c) => ({
+            itens={checklist.map((c) => ({
               id: c.id,
               descricao: c.descricao,
               concluido: c.concluido,
@@ -279,13 +289,13 @@ export default async function PaginaOrdem({
             concluidos={concluidos}
           />
 
-          {os.fotos.length > 0 && (
+          {fotos.length > 0 && (
             <Painel
               titulo="Registro fotográfico"
-              descricao={`${os.fotos.length} foto(s) enviadas pelo montador`}
+              descricao={`${fotos.length} foto(s) enviadas pelo montador`}
             >
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {os.fotos.map((f) => (
+                {fotos.map((f) => (
                   // eslint-disable-next-line @next/next/no-img-element
                   <figure key={f.id} className="overflow-hidden rounded-xl border border-borda">
                     <img
@@ -306,19 +316,19 @@ export default async function PaginaOrdem({
           <BlocoAssinaturas
             ordemId={os.id}
             linkAssinatura={linkAssinatura}
-            clienteNome={os.cliente.nome}
-            telefoneCliente={os.cliente.telefone}
+            clienteNome={cliente?.nome || "Cliente"}
+            telefoneCliente={cliente?.telefone ?? null}
             osNum={osNumero(os.numero)}
-            assinaturas={os.assinaturas.map((a) => ({
+            assinaturas={assinaturas.map((a) => ({
               id: a.id,
               tipo: a.tipo,
               nome: a.nome,
-              documento: a.documento,
+              documento: a.documento ?? null,
               imagem: a.imagem,
               hash: a.hash,
-              ip: a.ip,
-              userAgent: a.userAgent,
-              assinadoEm: a.assinadoEm.toISOString(),
+              ip: a.ip ?? null,
+              userAgent: a.userAgent ?? null,
+              assinadoEm: a.assinadoEm,
             }))}
           />
         </div>
@@ -354,9 +364,9 @@ export default async function PaginaOrdem({
               </button>
             </form>
 
-            {os.lancamentos.length > 0 && (
+            {todosLancamentos.length > 0 && (
               <ul className="mt-4 space-y-2 border-t border-borda pt-3">
-                {os.lancamentos.map((l) => (
+                {todosLancamentos.map((l) => (
                   <li key={l.id} className="flex items-center justify-between gap-2 text-xs">
                     <span className="min-w-0 truncate text-suave">
                       {l.tipo === "RECEITA" ? "Receita" : "Despesa"} ·{" "}
@@ -442,10 +452,10 @@ export default async function PaginaOrdem({
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <BotaoCopiar texto={linkAssinatura} rotulo="Copiar link" />
-              {os.cliente.telefone && (
+              {cliente?.telefone && (
                 <a
-                  href={`https://wa.me/${whatsapp(os.cliente.telefone)}?text=${encodeURIComponent(
-                    `Olá, ${os.cliente.nome}! Aqui é da EC Montagens de Móveis. Para finalizar a ${osNumero(os.numero)}, assine digitalmente o termo de conclusão: ${linkAssinatura}`
+                  href={`https://wa.me/${whatsapp(cliente.telefone)}?text=${encodeURIComponent(
+                    `Olá, ${cliente.nome}! Aqui é da EC Montagens de Móveis. Para finalizar a ${osNumero(os.numero)}, assine digitalmente o termo de conclusão: ${linkAssinatura}`
                   )}`}
                   target="_blank"
                   rel="noreferrer"
@@ -464,7 +474,7 @@ export default async function PaginaOrdem({
               {os.dataInicio && (
                 <Evento rotulo="Execução iniciada" quando={dataHora(os.dataInicio)} />
               )}
-              {os.assinaturas.map((a) => (
+              {assinaturas.map((a) => (
                 <Evento
                   key={a.id}
                   rotulo={`Assinatura ${a.tipo === "MONTADOR" ? "do montador" : "do cliente"}`}
@@ -481,7 +491,7 @@ export default async function PaginaOrdem({
             </ol>
           </Painel>
 
-          {os.assinaturas.length === 0 && (
+          {assinaturas.length === 0 && (
             <FormConfirmar
               action={excluirOrdem}
               mensagem={`Excluir definitivamente a ${osNumero(os.numero)}?`}

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CheckCircle2, MapPin, ShieldCheck } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbOrdens, dbClientes, dbUsuarios } from "@/lib/firestore";
 import { moeda, osNumero, data as fmtData, dataHora } from "@/lib/format";
 import { Marca } from "@/components/marca";
 import { FormularioAssinaturaCliente } from "./formulario";
@@ -16,23 +16,26 @@ export default async function PaginaAssinar({
 }) {
   const { token } = await params;
 
-  const os = await prisma.ordemServico.findUnique({
-    where: { tokenAssinatura: token },
-    include: {
-      cliente: true,
-      montador: { select: { nome: true } },
-      itens: { orderBy: { id: "asc" } },
-      checklist: { orderBy: { ordemIndex: "asc" } },
-      assinaturas: true,
-    },
-  });
+  const [os, todosClientes, todosUsuarios] = await Promise.all([
+    dbOrdens.buscarPorTokenAssinatura(token),
+    dbClientes.listar(),
+    dbUsuarios.listar(),
+  ]);
 
   if (!os) notFound();
 
-  const jaAssinou = os.assinaturas.find((a) => a.tipo === "CLIENTE");
-  const montadorAssinou = os.assinaturas.find((a) => a.tipo === "MONTADOR");
+  const cliente = todosClientes.find((c) => c.id === os.clienteId);
+  const montador = os.montadorId
+    ? todosUsuarios.find((u) => u.id === os.montadorId)
+    : null;
+
+  const assinaturas = os.assinaturas || [];
+  const jaAssinou = assinaturas.find((a) => a.tipo === "CLIENTE");
+  const montadorAssinou = assinaturas.find((a) => a.tipo === "MONTADOR");
   const cancelada = os.status === "CANCELADA";
-  const concluidos = os.checklist.filter((c) => c.concluido).length;
+  const checklist = os.checklist || [];
+  const concluidos = checklist.filter((c) => c.concluido).length;
+  const itens = os.itens || [];
 
   return (
     <div className="min-h-dvh bg-tela">
@@ -98,14 +101,14 @@ export default async function PaginaAssinar({
                 Confirmação de serviço concluído
               </h1>
               <p className="mt-1 text-sm leading-relaxed text-suave">
-                Olá, <strong className="text-texto">{os.cliente.nome}</strong>. Confira
+                Olá, <strong className="text-texto">{cliente?.nome || "Cliente"}</strong>. Confira
                 abaixo os dados do serviço e, estando tudo certo, assine para
                 registrar o aceite.
               </p>
 
               <dl className="mt-5 space-y-3 border-t border-borda pt-4 text-sm">
                 <Linha rotulo="Serviço">{os.titulo}</Linha>
-                {os.montador && <Linha rotulo="Montador">{os.montador.nome}</Linha>}
+                {montador && <Linha rotulo="Montador">{montador.nome}</Linha>}
                 {(os.endereco || os.cidade) && (
                   <Linha rotulo="Local">
                     <span className="inline-flex items-start gap-1.5">
@@ -119,9 +122,9 @@ export default async function PaginaAssinar({
                 </Linha>
               </dl>
 
-              {os.itens.length > 0 && (
+              {itens.length > 0 && (
                 <ul className="mt-4 space-y-1.5 border-t border-borda pt-4">
-                  {os.itens.map((i) => (
+                  {itens.map((i) => (
                     <li
                       key={i.id}
                       className="flex items-baseline justify-between gap-3 text-xs"
@@ -149,16 +152,16 @@ export default async function PaginaAssinar({
             </section>
 
             {/* Checklist */}
-            {os.checklist.length > 0 && (
+            {checklist.length > 0 && (
               <section className="cartao p-5">
                 <h2 className="text-sm font-bold text-texto">
                   O que foi executado
                   <span className="ml-1.5 text-xs font-medium text-suave">
-                    ({concluidos} de {os.checklist.length})
+                    ({concluidos} de {checklist.length})
                   </span>
                 </h2>
                 <ul className="mt-3 space-y-2">
-                  {os.checklist.map((c) => (
+                  {checklist.map((c) => (
                     <li key={c.id} className="flex items-start gap-2.5 text-sm">
                       <span
                         className={`mt-0.5 grid h-4.5 w-4.5 shrink-0 place-items-center rounded-md ${
@@ -199,8 +202,8 @@ export default async function PaginaAssinar({
               <div className="mt-5">
                 <FormularioAssinaturaCliente
                   ordemId={os.id}
-                  nomeSugerido={os.cliente.nome}
-                  documentoSugerido={os.cliente.documento}
+                  nomeSugerido={cliente?.nome || ""}
+                  documentoSugerido={cliente?.documento ?? null}
                 />
               </div>
             </section>

@@ -1,7 +1,15 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
-import { prisma } from "@/lib/prisma";
+import {
+  dbOrdens,
+  dbOrcamentos,
+  dbLancamentos,
+  dbClientes,
+  dbUsuarios,
+  dbNotificacoes,
+  OrdemServicoDoc,
+} from "@/lib/firestore";
 import { osNumero } from "@/lib/format";
 
 /** Token opaco para links públicos e páginas de assinatura. */
@@ -17,8 +25,13 @@ export function hashAssinatura(payload: {
   nome: string;
   valorTotal: number;
   imagem: string;
-  assinadoEm: Date;
+  assinadoEm: Date | string;
 }): string {
+  const assinadoEmStr =
+    payload.assinadoEm instanceof Date
+      ? payload.assinadoEm.toISOString()
+      : payload.assinadoEm;
+
   return createHash("sha256")
     .update(
       [
@@ -27,52 +40,29 @@ export function hashAssinatura(payload: {
         payload.tipo,
         payload.nome.trim().toLowerCase(),
         payload.valorTotal.toFixed(2),
-        payload.assinadoEm.toISOString(),
+        assinadoEmStr,
         createHash("sha256").update(payload.imagem).digest("hex"),
       ].join("|")
     )
     .digest("hex");
 }
 
-/**
- * Próximo número sequencial de OS / orçamento.
- *
- * A numeração é calculada na aplicação (e não com autoincrement) porque o
- * SQLite só aceita autoincrement na chave primária — assim o mesmo schema
- * roda em SQLite e PostgreSQL sem alteração.
- */
+/** Próximo número sequencial de OS / orçamento. */
 export async function proximoNumero(
   entidade: "ordemServico" | "orcamento"
 ): Promise<number> {
-  const agregado =
-    entidade === "ordemServico"
-      ? await prisma.ordemServico.aggregate({ _max: { numero: true } })
-      : await prisma.orcamento.aggregate({ _max: { numero: true } });
-
-  return (agregado._max.numero ?? 0) + 1;
+  return entidade === "ordemServico"
+    ? dbOrdens.proximoNumero()
+    : dbOrcamentos.proximoNumero();
 }
 
-/**
- * Cria um registro numerado com segurança: se dois cadastros simultâneos
- * pegarem o mesmo número, o índice único rejeita o segundo e nós tentamos
- * de novo com o número seguinte.
- */
+/** Cria um registro numerado sequencialmente. */
 export async function comNumeroSequencial<T>(
   entidade: "ordemServico" | "orcamento",
   criar: (numero: number) => Promise<T>
 ): Promise<T> {
-  const TENTATIVAS = 6;
-  for (let i = 0; i < TENTATIVAS; i++) {
-    const numero = (await proximoNumero(entidade)) + i;
-    try {
-      return await criar(numero);
-    } catch (erro: unknown) {
-      const codigo = (erro as { code?: string })?.code;
-      if (codigo === "P2002" && i < TENTATIVAS - 1) continue;
-      throw erro;
-    }
-  }
-  throw new Error("Não foi possível gerar a numeração. Tente novamente.");
+  const numero = await proximoNumero(entidade);
+  return criar(numero);
 }
 
 export async function notificar(dados: {
@@ -81,55 +71,52 @@ export async function notificar(dados: {
   mensagem: string;
   link?: string;
 }) {
-  await prisma.notificacao.create({ data: dados });
+  await dbNotificacoes.criar({
+    tipo: dados.tipo,
+    titulo: dados.titulo,
+    mensagem: dados.mensagem,
+    link: dados.link || null,
+    lida: false,
+  });
 }
 
 /**
  * Recalcula o valor da OS a partir dos itens e aplica o percentual de comissão.
  * Quando a OS não tem itens, o valorTotal informado manualmente é preservado.
  */
-export async function recalcularOrdem(ordemId: string) {
-  const ordem = await prisma.ordemServico.findUnique({
-    where: { id: ordemId },
-    include: { itens: true },
-  });
+export async function recalcularOrdem(ordemId: string): Promise<OrdemServicoDoc | null> {
+  const ordem = await dbOrdens.buscarPorId(ordemId);
   if (!ordem) return null;
 
-  const somaItens = ordem.itens.reduce(
+  const itens = ordem.itens || [];
+  const somaItens = itens.reduce(
     (acc, i) => acc + i.quantidade * i.valorUnitario,
     0
   );
-  const valorTotal = ordem.itens.length > 0 ? somaItens : ordem.valorTotal;
+  const valorTotal = itens.length > 0 ? somaItens : ordem.valorTotal;
   const comissaoValor = Number(
-    ((valorTotal * ordem.comissaoPercent) / 100).toFixed(2)
+    ((valorTotal * (ordem.comissaoPercent || 30)) / 100).toFixed(2)
   );
 
-  return prisma.ordemServico.update({
-    where: { id: ordemId },
-    data: { valorTotal, comissaoValor },
-  });
+  return dbOrdens.atualizar(ordemId, { valorTotal, comissaoValor });
 }
 
 /**
  * Espelha a OS no financeiro: uma RECEITA (serviço) e, havendo montador,
- * uma DESPESA de COMISSÃO. Os lançamentos automáticos são reescritos a cada
- * chamada, então a função é idempotente — pode rodar quantas vezes precisar.
- *
- * Regra de caixa:
- *   • OS concluída e paga   → receita CONFIRMADO
- *   • OS concluída não paga → receita PENDENTE (entra em "A receber")
- *   • OS cancelada          → tudo CANCELADO
+ * uma DESPESA de COMISSÃO. Os lançamentos automáticos são idempotentes.
  */
-export async function sincronizarFinanceiro(ordemId: string) {
-  const ordem = await prisma.ordemServico.findUnique({
-    where: { id: ordemId },
-    include: { cliente: true, montador: true },
-  });
+export async function sincronizarFinanceiro(ordemId: string): Promise<void> {
+  const ordem = await dbOrdens.buscarPorId(ordemId);
   if (!ordem) return;
 
-  // Antes da conclusão não existe fato gerador: limpa o que houver.
+  const cliente = await dbClientes.buscarPorId(ordem.clienteId);
+  const montador = ordem.montadorId
+    ? await dbUsuarios.buscarPorId(ordem.montadorId)
+    : null;
+
+  // Antes da conclusão não existe fato gerador: limpa lançamentos automáticos anteriores.
   if (ordem.status !== "CONCLUIDA" && ordem.status !== "CANCELADA") {
-    await prisma.lancamento.deleteMany({ where: { ordemId, automatico: true } });
+    await dbLancamentos.excluirAutomaticosDaOrdem(ordemId);
     return;
   }
 
@@ -140,71 +127,70 @@ export async function sincronizarFinanceiro(ordemId: string) {
       ? "CONFIRMADO"
       : "PENDENTE";
   const statusComissao = cancelada ? "CANCELADO" : "CONFIRMADO";
-  const dataRef = ordem.dataConclusao ?? new Date();
-  const referencia = `${osNumero(ordem.numero)} · ${ordem.cliente.nome}`;
+  const dataRef = ordem.dataConclusao || new Date().toISOString();
+  const clienteNome = cliente?.nome || "Cliente";
+  const referencia = `${osNumero(ordem.numero)} · ${clienteNome}`;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.lancamento.deleteMany({ where: { ordemId, automatico: true } });
+  // Limpa anteriores
+  await dbLancamentos.excluirAutomaticosDaOrdem(ordemId);
 
-    if (ordem.valorTotal > 0) {
-      await tx.lancamento.create({
-        data: {
-          tipo: "RECEITA",
-          categoria: "SERVICO",
-          descricao: `${ordem.titulo} — ${referencia}`,
-          valor: ordem.valorTotal,
-          data: dataRef,
-          status: statusReceita,
-          formaPagamento: ordem.formaPagamento,
-          automatico: true,
-          ordemId: ordem.id,
-        },
-      });
-    }
+  if (ordem.valorTotal > 0) {
+    await dbLancamentos.criar({
+      tipo: "RECEITA",
+      categoria: "SERVICO",
+      descricao: `${ordem.titulo} — ${referencia}`,
+      valor: ordem.valorTotal,
+      data: dataRef,
+      status: statusReceita,
+      formaPagamento: ordem.formaPagamento || "PIX",
+      automatico: true,
+      ordemId: ordem.id,
+      observacoes: null,
+      montadorId: null,
+    });
+  }
 
-    if (ordem.montadorId && ordem.comissaoValor > 0) {
-      await tx.lancamento.create({
-        data: {
-          tipo: "DESPESA",
-          categoria: "COMISSAO",
-          descricao: `Comissão ${ordem.montador?.nome ?? "montador"} (${ordem.comissaoPercent}%) — ${referencia}`,
-          valor: ordem.comissaoValor,
-          data: dataRef,
-          status: statusComissao,
-          formaPagamento: ordem.formaPagamento,
-          automatico: true,
-          ordemId: ordem.id,
-          montadorId: ordem.montadorId,
-        },
-      });
-    }
-  });
+  if (ordem.montadorId && (ordem.comissaoValor || 0) > 0) {
+    await dbLancamentos.criar({
+      tipo: "DESPESA",
+      categoria: "COMISSAO",
+      descricao: `Comissão ${montador?.nome ?? "montador"} (${ordem.comissaoPercent}%) — ${referencia}`,
+      valor: ordem.comissaoValor,
+      data: dataRef,
+      status: statusComissao,
+      formaPagamento: ordem.formaPagamento || "PIX",
+      automatico: true,
+      ordemId: ordem.id,
+      montadorId: ordem.montadorId,
+      observacoes: null,
+    });
+  }
 }
 
 /**
  * Uma OS só pode ser concluída depois das duas assinaturas digitais.
  * Enquanto faltar alguma, ela fica em AGUARDANDO_ASSINATURA.
  */
-export async function avaliarConclusao(ordemId: string) {
-  const ordem = await prisma.ordemServico.findUnique({
-    where: { id: ordemId },
-    include: { assinaturas: true, cliente: true },
-  });
+export async function avaliarConclusao(ordemId: string): Promise<OrdemServicoDoc | null> {
+  const ordem = await dbOrdens.buscarPorId(ordemId);
   if (!ordem || ordem.status === "CANCELADA") return null;
 
-  const temMontador = ordem.assinaturas.some((a) => a.tipo === "MONTADOR");
-  const temCliente = ordem.assinaturas.some((a) => a.tipo === "CLIENTE");
+  const assinaturas = ordem.assinaturas || [];
+  const temMontador = assinaturas.some((a) => a.tipo === "MONTADOR");
+  const temCliente = assinaturas.some((a) => a.tipo === "CLIENTE");
+
+  const cliente = await dbClientes.buscarPorId(ordem.clienteId);
 
   if (temMontador && temCliente) {
     if (ordem.status !== "CONCLUIDA") {
-      await prisma.ordemServico.update({
-        where: { id: ordemId },
-        data: { status: "CONCLUIDA", dataConclusao: ordem.dataConclusao ?? new Date() },
+      await dbOrdens.atualizar(ordemId, {
+        status: "CONCLUIDA",
+        dataConclusao: ordem.dataConclusao || new Date().toISOString(),
       });
       await notificar({
         tipo: "OS_CONCLUIDA",
         titulo: `${osNumero(ordem.numero)} concluída e assinada`,
-        mensagem: `${ordem.titulo} — ${ordem.cliente.nome}. Montador e cliente assinaram digitalmente.`,
+        mensagem: `${ordem.titulo} — ${cliente?.nome || "Cliente"}. Montador e cliente assinaram digitalmente.`,
         link: `/ordens/${ordem.id}`,
       });
     }
@@ -212,14 +198,11 @@ export async function avaliarConclusao(ordemId: string) {
     (temMontador || temCliente) &&
     ordem.status !== "AGUARDANDO_ASSINATURA"
   ) {
-    await prisma.ordemServico.update({
-      where: { id: ordemId },
-      data: { status: "AGUARDANDO_ASSINATURA" },
-    });
+    await dbOrdens.atualizar(ordemId, { status: "AGUARDANDO_ASSINATURA" });
   }
 
   await sincronizarFinanceiro(ordemId);
-  return prisma.ordemServico.findUnique({ where: { id: ordemId } });
+  return dbOrdens.buscarPorId(ordemId);
 }
 
 /** URL absoluta do sistema, usada nos links enviados ao cliente. */

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { dbLancamentos, dbOrdens } from "@/lib/firestore";
 import { exigirAdmin } from "@/lib/auth";
 import { paraNumero } from "@/lib/format";
 import { dadosDoForm } from "@/lib/formulario";
@@ -42,23 +42,24 @@ export async function salvarLancamento(
     categoria: d.categoria,
     descricao: d.descricao,
     valor,
-    data: new Date(`${d.data}T12:00:00`),
+    data: new Date(`${d.data}T12:00:00`).toISOString(),
     status: d.status,
     formaPagamento: d.formaPagamento,
     montadorId: d.montadorId || null,
     observacoes: d.observacoes || null,
+    automatico: false,
   };
 
   if (id) {
-    const atual = await prisma.lancamento.findUnique({ where: { id } });
+    const atual = await dbLancamentos.buscarPorId(id);
     if (atual?.automatico) {
       return {
         erro: "Este lançamento é gerado automaticamente pela OS. Edite a ordem de serviço.",
       };
     }
-    await prisma.lancamento.update({ where: { id }, data: base });
+    await dbLancamentos.atualizar(id, base);
   } else {
-    await prisma.lancamento.create({ data: base });
+    await dbLancamentos.criar(base);
   }
 
   revalidatePath("/painel");
@@ -70,24 +71,18 @@ export async function alternarStatusLancamento(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const atual = await prisma.lancamento.findUnique({
-    where: { id },
-    include: { ordem: true },
-  });
+  const atual = await dbLancamentos.buscarPorId(id);
   if (!atual) return;
 
   const novo = atual.status === "CONFIRMADO" ? "PENDENTE" : "CONFIRMADO";
 
   // Receita automática espelha o campo "pago" da OS — mantém os dois em sincronia.
   if (atual.automatico && atual.ordemId && atual.tipo === "RECEITA") {
-    await prisma.ordemServico.update({
-      where: { id: atual.ordemId },
-      data: { pago: novo === "CONFIRMADO" },
-    });
+    await dbOrdens.atualizar(atual.ordemId, { pago: novo === "CONFIRMADO" });
     revalidatePath(`/ordens/${atual.ordemId}`);
   }
 
-  await prisma.lancamento.update({ where: { id }, data: { status: novo } });
+  await dbLancamentos.atualizar(id, { status: novo });
   revalidatePath("/painel");
   revalidatePath("/ordens");
 }
@@ -97,13 +92,13 @@ export async function excluirLancamento(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const atual = await prisma.lancamento.findUnique({ where: { id } });
+  const atual = await dbLancamentos.buscarPorId(id);
   if (atual?.automatico) {
     throw new Error(
       "Lançamento gerado pela ordem de serviço. Cancele ou exclua a OS correspondente."
     );
   }
 
-  await prisma.lancamento.delete({ where: { id } });
+  await dbLancamentos.excluir(id);
   revalidatePath("/painel");
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { dbClientes, dbOrdens } from "@/lib/firestore";
 import { exigirAdmin } from "@/lib/auth";
 
 export type EstadoForm = { erro?: string; sucesso?: string };
@@ -58,9 +58,9 @@ export async function salvarCliente(
   if ("erro" in resultado) return { erro: resultado.erro };
 
   if (id) {
-    await prisma.cliente.update({ where: { id }, data: resultado.dados });
+    await dbClientes.atualizar(id, resultado.dados);
   } else {
-    await prisma.cliente.create({ data: resultado.dados });
+    await dbClientes.criar(resultado.dados);
   }
 
   revalidatePath("/clientes");
@@ -73,14 +73,14 @@ export async function excluirCliente(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const ordens = await prisma.ordemServico.count({ where: { clienteId: id } });
+  const todasOrdens = await dbOrdens.listar();
+  const ordens = todasOrdens.filter((o) => o.clienteId === id).length;
   if (ordens > 0) {
-    // Cliente com histórico não é apagado — as OS assinadas precisam do vínculo.
     throw new Error(
       `Este cliente possui ${ordens} ordem(ns) de serviço e não pode ser excluído.`
     );
   }
 
-  await prisma.cliente.delete({ where: { id } });
+  await dbClientes.excluir(id);
   revalidatePath("/clientes");
 }

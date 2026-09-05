@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { dbUsuarios } from "@/lib/firestore";
 import { exigirAdmin, hashSenha } from "@/lib/auth";
 import { dadosDoForm, marcado } from "@/lib/formulario";
 import type { EstadoForm } from "@/app/actions/clientes";
@@ -49,11 +49,10 @@ export async function salvarUsuario(
     return { erro: "A nova senha precisa ter pelo menos 6 caracteres." };
   }
 
-  const duplicado = await prisma.usuario.findFirst({
-    where: { email, ...(id ? { NOT: { id } } : {}) },
-    select: { id: true },
-  });
-  if (duplicado) return { erro: "Já existe um usuário com esse e-mail." };
+  const usuarioExistente = await dbUsuarios.buscarPorEmail(email);
+  if (usuarioExistente && usuarioExistente.id !== id) {
+    return { erro: "Já existe um usuário com esse e-mail." };
+  }
 
   const base = {
     nome: d.nome,
@@ -66,18 +65,16 @@ export async function salvarUsuario(
   };
 
   if (id) {
-    await prisma.usuario.update({
-      where: { id },
-      data: { ...base, ...(senha ? { senhaHash: await hashSenha(senha) } : {}) },
+    await dbUsuarios.atualizar(id, {
+      ...base,
+      ...(senha ? { senhaHash: await hashSenha(senha) } : {}),
     });
   } else {
-    const total = await prisma.usuario.count();
-    await prisma.usuario.create({
-      data: {
-        ...base,
-        senhaHash: await hashSenha(senha),
-        corAvatar: PALETA[total % PALETA.length],
-      },
+    const todos = await dbUsuarios.listar();
+    await dbUsuarios.criar({
+      ...base,
+      senhaHash: await hashSenha(senha),
+      corAvatar: PALETA[todos.length % PALETA.length],
     });
   }
 
@@ -91,10 +88,10 @@ export async function alternarAtivo(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id || id === sessao.id) return;
 
-  const usuario = await prisma.usuario.findUnique({ where: { id } });
+  const usuario = await dbUsuarios.buscarPorId(id);
   if (!usuario) return;
 
-  await prisma.usuario.update({ where: { id }, data: { ativo: !usuario.ativo } });
+  await dbUsuarios.atualizar(id, { ativo: !usuario.ativo });
   revalidatePath("/equipe");
 }
 
@@ -107,13 +104,13 @@ export async function excluirUsuario(formData: FormData) {
     throw new Error("Você não pode excluir o próprio acesso.");
   }
 
-  const admins = await prisma.usuario.count({ where: { papel: "ADMIN", ativo: true } });
-  const alvo = await prisma.usuario.findUnique({ where: { id } });
+  const todos = await dbUsuarios.listar();
+  const admins = todos.filter((u) => u.papel === "ADMIN" && u.ativo).length;
+  const alvo = await dbUsuarios.buscarPorId(id);
   if (alvo?.papel === "ADMIN" && admins <= 1) {
     throw new Error("O sistema precisa de pelo menos um administrador ativo.");
   }
 
-  // As OS ficam preservadas: o vínculo com o montador vira nulo (onDelete: SetNull).
-  await prisma.usuario.delete({ where: { id } });
+  await dbUsuarios.excluir(id);
   revalidatePath("/equipe");
 }

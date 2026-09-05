@@ -12,7 +12,7 @@ import {
   Phone,
   Trash2,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbOrcamentos, dbOrdens, dbLinks, dbClientes } from "@/lib/firestore";
 import { TIPOS_SERVICO } from "@/lib/constants";
 import {
   data as fmtData,
@@ -36,10 +36,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const o = await prisma.orcamento.findUnique({
-    where: { id },
-    select: { numero: true, nomeContato: true },
-  });
+  const o = await dbOrcamentos.buscarPorId(id);
   return { title: o ? `${orcNumero(o.numero)} · ${o.nomeContato}` : "Orçamento" };
 }
 
@@ -50,16 +47,18 @@ export default async function PaginaOrcamento({
 }) {
   const { id } = await params;
 
-  const orcamento = await prisma.orcamento.findUnique({
-    where: { id },
-    include: {
-      ordem: { select: { id: true, numero: true, status: true } },
-      link: { select: { titulo: true } },
-      cliente: { select: { id: true, nome: true } },
-    },
-  });
+  const [orcamento, todasOrdens, todosLinks] = await Promise.all([
+    dbOrcamentos.buscarPorId(id),
+    dbOrdens.listar(),
+    dbLinks.listar(),
+  ]);
 
   if (!orcamento) notFound();
+
+  const ordem = todasOrdens.find((o) => o.orcamentoId === id);
+  const link = orcamento.linkId
+    ? todosLinks.find((l) => l.id === orcamento.linkId)
+    : null;
 
   const enderecoCompleto = [
     orcamento.endereco,
@@ -99,7 +98,7 @@ export default async function PaginaOrcamento({
           </h2>
           <p className="mt-0.5 text-xs text-suave">
             Recebido em {dataHora(orcamento.criadoEm)}
-            {orcamento.link ? ` · via ${orcamento.link.titulo}` : ""}
+            {link ? ` · via ${link.titulo}` : ""}
           </p>
         </div>
 
@@ -113,9 +112,9 @@ export default async function PaginaOrcamento({
             <MessageCircle size={15} /> Responder no WhatsApp
           </a>
 
-          {orcamento.ordem ? (
-            <Link href={`/ordens/${orcamento.ordem.id}`} className="btn btn-principal">
-              Ver OS-{String(orcamento.ordem.numero).padStart(4, "0")}
+          {ordem ? (
+            <Link href={`/ordens/${ordem.id}`} className="btn btn-principal">
+              Ver OS-{String(ordem.numero).padStart(4, "0")}
               <ArrowRight size={15} />
             </Link>
           ) : (
@@ -210,7 +209,7 @@ export default async function PaginaOrcamento({
             </dl>
           </Painel>
 
-          {!orcamento.ordem && (
+          {!ordem && (
             <FormConfirmar
               action={excluirOrcamento}
               mensagem={`Excluir o orçamento de ${orcamento.nomeContato}?`}
@@ -226,10 +225,10 @@ export default async function PaginaOrcamento({
         <FormularioResposta
           id={orcamento.id}
           status={orcamento.status}
-          valorProposto={orcamento.valorProposto}
-          observacoesInternas={orcamento.observacoesInternas}
-          respondidoEm={orcamento.respondidoEm?.toISOString() ?? null}
-          convertido={!!orcamento.ordem}
+          valorProposto={orcamento.valorProposto ?? null}
+          observacoesInternas={orcamento.observacoesInternas ?? null}
+          respondidoEm={orcamento.respondidoEm ?? null}
+          convertido={!!ordem}
         />
       </div>
     </>

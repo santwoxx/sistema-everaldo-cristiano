@@ -7,7 +7,7 @@ import {
   ShieldCheck,
   Smartphone,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbUsuarios } from "@/lib/firestore";
 import { desempenhoMontadores } from "@/lib/financeiro";
 import {
   dataHora,
@@ -24,9 +24,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PaginaEquipe() {
   const [usuarios, desempenho] = await Promise.all([
-    prisma.usuario.findMany({
-      orderBy: [{ papel: "asc" }, { nome: "asc" }],
-    }),
+    dbUsuarios.listar(),
     desempenhoMontadores(),
   ]);
 
@@ -111,8 +109,8 @@ export default async function PaginaEquipe() {
                       nome: u.nome,
                       email: u.email,
                       papel: u.papel,
-                      telefone: u.telefone,
-                      documento: u.documento,
+                      telefone: u.telefone ?? null,
+                      documento: u.documento ?? null,
                       comissaoPadrao: u.comissaoPadrao,
                       ativo: u.ativo,
                     }}

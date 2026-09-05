@@ -12,7 +12,7 @@ import {
   PlayCircle,
   Wallet,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbOrdens, dbClientes, dbUsuarios } from "@/lib/firestore";
 import { exigirSessao } from "@/lib/auth";
 import {
   data as fmtData,
@@ -36,10 +36,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const os = await prisma.ordemServico.findUnique({
-    where: { id },
-    select: { numero: true },
-  });
+  const os = await dbOrdens.buscarPorId(id);
   return { title: os ? osNumero(os.numero) : "Ordem de serviço" };
 }
 
@@ -51,26 +48,29 @@ export default async function PaginaExecucao({
   const sessao = await exigirSessao();
   const { id } = await params;
 
-  const os = await prisma.ordemServico.findUnique({
-    where: { id },
-    include: {
-      cliente: true,
-      montador: { select: { id: true, nome: true, documento: true } },
-      itens: { orderBy: { id: "asc" } },
-      checklist: { orderBy: { ordemIndex: "asc" } },
-      assinaturas: true,
-      fotos: { orderBy: { criadoEm: "asc" } },
-    },
-  });
+  const [os, todosClientes, todosUsuarios] = await Promise.all([
+    dbOrdens.buscarPorId(id),
+    dbClientes.listar(),
+    dbUsuarios.listar(),
+  ]);
 
   if (!os) notFound();
 
   // Montador só acessa as próprias OS; o admin acompanha todas.
   if (sessao.papel !== "ADMIN" && os.montadorId !== sessao.id) notFound();
 
-  const feitos = os.checklist.filter((c) => c.concluido).length;
-  const tudoFeito = os.checklist.length > 0 && feitos === os.checklist.length;
+  const cliente = todosClientes.find((c) => c.id === os.clienteId);
+  const montador = os.montadorId
+    ? todosUsuarios.find((u) => u.id === os.montadorId)
+    : null;
+
+  const checklist = os.checklist || [];
+  const feitos = checklist.filter((c) => c.concluido).length;
+  const tudoFeito = checklist.length > 0 && feitos === checklist.length;
   const enderecoCompleto = [os.endereco, os.cidade].filter(Boolean).join(", ");
+  const itens = os.itens || [];
+  const fotos = os.fotos || [];
+  const assinaturas = os.assinaturas || [];
 
   return (
     <>
@@ -123,18 +123,18 @@ export default async function PaginaExecucao({
             <span className="mt-0.5 shrink-0 text-suave">
               <CheckCircle2 size={15} />
             </span>
-            <span className="text-texto">{os.cliente.nome}</span>
+            <span className="text-texto">{cliente?.nome || "Cliente"}</span>
           </div>
 
-          {os.cliente.telefone && (
+          {cliente?.telefone && (
             <a
-              href={`https://wa.me/${whatsapp(os.cliente.telefone)}`}
+              href={`https://wa.me/${whatsapp(cliente.telefone)}`}
               target="_blank"
               rel="noreferrer"
               className="flex items-start gap-2.5 text-texto hover:text-marca-600"
             >
               <Phone size={15} className="mt-0.5 shrink-0 text-suave" />
-              <span>{fmtTelefone(os.cliente.telefone)}</span>
+              <span>{fmtTelefone(cliente.telefone)}</span>
             </a>
           )}
 
@@ -168,11 +168,11 @@ export default async function PaginaExecucao({
       </section>
 
       {/* Itens */}
-      {os.itens.length > 0 && (
+      {itens.length > 0 && (
         <section className="cartao p-4">
           <h2 className="text-sm font-bold text-texto">Itens do serviço</h2>
           <ul className="mt-3 space-y-2">
-            {os.itens.map((i) => (
+            {itens.map((i) => (
               <li key={i.id} className="flex items-baseline justify-between gap-3 text-sm">
                 <span className="min-w-0 text-suave">
                   <strong className="text-texto">
@@ -191,7 +191,7 @@ export default async function PaginaExecucao({
 
       <ChecklistMontador
         ordemId={os.id}
-        itens={os.checklist.map((c) => ({
+        itens={checklist.map((c) => ({
           id: c.id,
           descricao: c.descricao,
           concluido: c.concluido,
@@ -201,10 +201,10 @@ export default async function PaginaExecucao({
 
       <EnvioFotos
         ordemId={os.id}
-        fotos={os.fotos.map((f) => ({
+        fotos={fotos.map((f) => ({
           id: f.id,
           dataUrl: f.dataUrl,
-          legenda: f.legenda,
+          legenda: f.legenda ?? null,
           etapa: f.etapa,
         }))}
       />
@@ -212,19 +212,19 @@ export default async function PaginaExecucao({
       <FluxoAssinaturas
         ordemId={os.id}
         tudoFeito={tudoFeito}
-        totalEtapas={os.checklist.length}
+        totalEtapas={checklist.length}
         etapasFeitas={feitos}
-        nomeMontador={os.montador?.nome ?? sessao.nome}
-        documentoMontador={os.montador?.documento ?? null}
-        nomeCliente={os.cliente.nome}
-        documentoCliente={os.cliente.documento}
+        nomeMontador={montador?.nome ?? sessao.nome}
+        documentoMontador={montador?.documento ?? null}
+        nomeCliente={cliente?.nome || "Cliente"}
+        documentoCliente={cliente?.documento || null}
         cancelada={os.status === "CANCELADA"}
-        assinaturas={os.assinaturas.map((a) => ({
+        assinaturas={assinaturas.map((a) => ({
           id: a.id,
           tipo: a.tipo,
           nome: a.nome,
           imagem: a.imagem,
-          assinadoEm: a.assinadoEm.toISOString(),
+          assinadoEm: a.assinadoEm,
         }))}
       />
     </>

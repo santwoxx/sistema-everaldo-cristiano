@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma } from "@/lib/prisma";
+import { dbLancamentos, dbOrdens, dbUsuarios, LancamentoDoc } from "@/lib/firestore";
 
 export type ResumoFinanceiro = {
   faturamentoConfirmado: number;
@@ -15,54 +15,43 @@ export type ResumoFinanceiro = {
 
 export type Periodo = { de?: Date; ate?: Date };
 
-function filtroData(periodo?: Periodo) {
-  if (!periodo?.de && !periodo?.ate) return {};
-  return {
-    data: {
-      ...(periodo?.de ? { gte: periodo.de } : {}),
-      ...(periodo?.ate ? { lte: periodo.ate } : {}),
-    },
-  };
-}
-
 /**
  * Consolida o caixa: receitas confirmadas, pendentes, despesas e comissoes.
  * Lancamentos CANCELADOS ficam de fora de qualquer soma.
  */
 export async function resumoFinanceiro(periodo?: Periodo): Promise<ResumoFinanceiro> {
-  const base = filtroData(periodo);
+  const todos = await dbLancamentos.listar();
 
-  const [receitaOk, receitaPendente, despesaTotal, comissaoTotal, total] =
-    await Promise.all([
-      prisma.lancamento.aggregate({
-        _sum: { valor: true },
-        where: { ...base, tipo: "RECEITA", status: "CONFIRMADO" },
-      }),
-      prisma.lancamento.aggregate({
-        _sum: { valor: true },
-        where: { ...base, tipo: "RECEITA", status: "PENDENTE" },
-      }),
-      prisma.lancamento.aggregate({
-        _sum: { valor: true },
-        where: { ...base, tipo: "DESPESA", status: { not: "CANCELADO" } },
-      }),
-      prisma.lancamento.aggregate({
-        _sum: { valor: true },
-        where: {
-          ...base,
-          tipo: "DESPESA",
-          categoria: "COMISSAO",
-          status: { not: "CANCELADO" },
-        },
-      }),
-      prisma.lancamento.count({ where: base }),
-    ]);
+  const filtrados = todos.filter((l) => {
+    if (periodo?.de && new Date(l.data).getTime() < periodo.de.getTime()) return false;
+    if (periodo?.ate && new Date(l.data).getTime() > periodo.ate.getTime()) return false;
+    return true;
+  });
 
-  const faturamentoConfirmado = receitaOk._sum.valor ?? 0;
-  const aReceber = receitaPendente._sum.valor ?? 0;
-  const despesasOperacionais = despesaTotal._sum.valor ?? 0;
-  const comissoes = comissaoTotal._sum.valor ?? 0;
+  let faturamentoConfirmado = 0;
+  let aReceber = 0;
+  let despesasOperacionais = 0;
+  let comissoes = 0;
+
+  for (const l of filtrados) {
+    if (l.status === "CANCELADO") continue;
+
+    if (l.tipo === "RECEITA") {
+      if (l.status === "CONFIRMADO") {
+        faturamentoConfirmado += l.valor || 0;
+      } else if (l.status === "PENDENTE") {
+        aReceber += l.valor || 0;
+      }
+    } else if (l.tipo === "DESPESA") {
+      despesasOperacionais += l.valor || 0;
+      if (l.categoria === "COMISSAO") {
+        comissoes += l.valor || 0;
+      }
+    }
+  }
+
   const lucroLiquido = faturamentoConfirmado - despesasOperacionais;
+  const margem = faturamentoConfirmado > 0 ? (lucroLiquido / faturamentoConfirmado) * 100 : 0;
 
   return {
     faturamentoConfirmado,
@@ -71,8 +60,8 @@ export async function resumoFinanceiro(periodo?: Periodo): Promise<ResumoFinance
     comissoes,
     despesasSemComissao: despesasOperacionais - comissoes,
     lucroLiquido,
-    margem: faturamentoConfirmado > 0 ? (lucroLiquido / faturamentoConfirmado) * 100 : 0,
-    totalMovimentacoes: total,
+    margem,
+    totalMovimentacoes: filtrados.length,
   };
 }
 
@@ -81,10 +70,10 @@ export async function evolucaoMensal(meses = 6) {
   const hoje = new Date();
   const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1), 1);
 
-  const lancamentos = await prisma.lancamento.findMany({
-    where: { data: { gte: inicio }, status: { not: "CANCELADO" } },
-    select: { tipo: true, valor: true, data: true, status: true },
-  });
+  const todos = await dbLancamentos.listar();
+  const lancamentos = todos.filter(
+    (l) => new Date(l.data).getTime() >= inicio.getTime() && l.status !== "CANCELADO"
+  );
 
   const buckets = Array.from({ length: meses }, (_, i) => {
     const d = new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1) + i, 1);
@@ -100,13 +89,15 @@ export async function evolucaoMensal(meses = 6) {
   });
 
   for (const l of lancamentos) {
-    const chave = `${l.data.getFullYear()}-${l.data.getMonth()}`;
+    const dataDoc = new Date(l.data);
+    const chave = `${dataDoc.getFullYear()}-${dataDoc.getMonth()}`;
     const alvo = buckets.find((b) => b.chave === chave);
     if (!alvo) continue;
+
     if (l.tipo === "RECEITA") {
-      if (l.status === "CONFIRMADO") alvo.receita += l.valor;
+      if (l.status === "CONFIRMADO") alvo.receita += l.valor || 0;
     } else {
-      alvo.despesa += l.valor;
+      alvo.despesa += l.valor || 0;
     }
   }
 
@@ -115,37 +106,37 @@ export async function evolucaoMensal(meses = 6) {
 
 /** Ranking de producao e comissao por montador. */
 export async function desempenhoMontadores() {
-  const montadores = await prisma.usuario.findMany({
-    where: { papel: "MONTADOR" },
-    orderBy: { nome: "asc" },
-    select: { id: true, nome: true, corAvatar: true, ativo: true, comissaoPadrao: true },
-  });
+  const montadores = await dbUsuarios.listar({ papel: "MONTADOR" });
+  const todasOrdens = await dbOrdens.listar();
+  const todosLancamentos = await dbLancamentos.listar();
 
-  const resultado = await Promise.all(
-    montadores.map(async (m) => {
-      const [concluidas, andamento, comissao, faturado] = await Promise.all([
-        prisma.ordemServico.count({ where: { montadorId: m.id, status: "CONCLUIDA" } }),
-        prisma.ordemServico.count({
-          where: { montadorId: m.id, status: { in: ["AGENDADA", "EM_ANDAMENTO", "AGUARDANDO_ASSINATURA"] } },
-        }),
-        prisma.lancamento.aggregate({
-          _sum: { valor: true },
-          where: { montadorId: m.id, categoria: "COMISSAO", status: { not: "CANCELADO" } },
-        }),
-        prisma.ordemServico.aggregate({
-          _sum: { valorTotal: true },
-          where: { montadorId: m.id, status: "CONCLUIDA" },
-        }),
-      ]);
-      return {
-        ...m,
-        concluidas,
-        andamento,
-        comissao: comissao._sum.valor ?? 0,
-        faturado: faturado._sum.valorTotal ?? 0,
-      };
-    })
-  );
+  const resultado = montadores.map((m) => {
+    const ordensDoMontador = todasOrdens.filter((o) => o.montadorId === m.id);
+    const concluidas = ordensDoMontador.filter((o) => o.status === "CONCLUIDA").length;
+    const andamento = ordensDoMontador.filter((o) =>
+      ["AGENDADA", "EM_ANDAMENTO", "AGUARDANDO_ASSINATURA"].includes(o.status)
+    ).length;
+
+    const faturado = ordensDoMontador
+      .filter((o) => o.status === "CONCLUIDA")
+      .reduce((acc, o) => acc + (o.valorTotal || 0), 0);
+
+    const comissao = todosLancamentos
+      .filter((l) => l.montadorId === m.id && l.categoria === "COMISSAO" && l.status !== "CANCELADO")
+      .reduce((acc, l) => acc + (l.valor || 0), 0);
+
+    return {
+      id: m.id,
+      nome: m.nome,
+      corAvatar: m.corAvatar || "#0891b2",
+      ativo: m.ativo,
+      comissaoPadrao: m.comissaoPadrao,
+      concluidas,
+      andamento,
+      comissao,
+      faturado,
+    };
+  });
 
   return resultado.sort((a, b) => b.faturado - a.faturado);
 }

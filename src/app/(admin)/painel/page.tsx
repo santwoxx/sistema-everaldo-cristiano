@@ -8,7 +8,12 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import {
+  dbLancamentos,
+  dbUsuarios,
+  dbNotificacoes,
+  dbOrdens,
+} from "@/lib/firestore";
 import { desempenhoMontadores, evolucaoMensal, resumoFinanceiro } from "@/lib/financeiro";
 import { moeda, porcentagem } from "@/lib/format";
 import { CartaoIndicador, FaixaDestaque, Painel } from "@/components/ui";
@@ -34,45 +39,32 @@ export default async function PaginaPainel({
   const porPagina = 12;
   const paginaAtual = Math.max(1, Number(pagina) || 1);
 
-  const where =
-    filtro === "receitas"
-      ? { tipo: "RECEITA" }
-      : filtro === "despesas"
-        ? { tipo: "DESPESA" }
-        : {};
-
-  const [resumo, evolucao, equipe, lancamentos, totalFiltrado, montadores, notificacoes] =
+  const [resumo, evolucao, equipe, todosLancamentos, montadores, notificacoes, todasOrdens, todosUsuarios] =
     await Promise.all([
       resumoFinanceiro(),
       evolucaoMensal(6),
       desempenhoMontadores(),
-      prisma.lancamento.findMany({
-        where,
-        orderBy: [{ data: "desc" }, { criadoEm: "desc" }],
-        take: porPagina,
-        skip: (paginaAtual - 1) * porPagina,
-        include: {
-          ordem: { select: { id: true, numero: true } },
-          montador: { select: { nome: true } },
-        },
-      }),
-      prisma.lancamento.count({ where }),
-      prisma.usuario.findMany({
-        where: { papel: "MONTADOR", ativo: true },
-        select: { id: true, nome: true },
-        orderBy: { nome: "asc" },
-      }),
-      prisma.notificacao.findMany({
-        orderBy: { criadoEm: "desc" },
-        take: 6,
-      }),
+      dbLancamentos.listar(),
+      dbUsuarios.listar({ papel: "MONTADOR", ativo: true }),
+      dbNotificacoes.listar(6),
+      dbOrdens.listar(),
+      dbUsuarios.listar(),
     ]);
 
-  const [totalTodos, totalReceitas, totalDespesas] = await Promise.all([
-    prisma.lancamento.count(),
-    prisma.lancamento.count({ where: { tipo: "RECEITA" } }),
-    prisma.lancamento.count({ where: { tipo: "DESPESA" } }),
-  ]);
+  let filtrados = todosLancamentos;
+  if (filtro === "receitas") filtrados = todosLancamentos.filter((l) => l.tipo === "RECEITA");
+  if (filtro === "despesas") filtrados = todosLancamentos.filter((l) => l.tipo === "DESPESA");
+
+  const totalFiltrado = filtrados.length;
+  const totalTodos = todosLancamentos.length;
+  const totalReceitas = todosLancamentos.filter((l) => l.tipo === "RECEITA").length;
+  const totalDespesas = todosLancamentos.filter((l) => l.tipo === "DESPESA").length;
+
+  const inicio = (paginaAtual - 1) * porPagina;
+  const lancamentosPaginados = filtrados.slice(inicio, inicio + porPagina);
+
+  const ordensMap = new Map(todasOrdens.map((o) => [o.id, o]));
+  const usuariosMap = new Map(todosUsuarios.map((u) => [u.id, u]));
 
   return (
     <>
@@ -81,7 +73,7 @@ export default async function PaginaPainel({
         contexto="EC Montagens de Móveis"
         titulo="Fluxo de Caixa & Lucratividade"
         descricao="Visão consolidada de entradas, despesas operacionais e comissões dos montadores"
-        acao={<NovoLancamento montadores={montadores} />}
+        acao={<NovoLancamento montadores={montadores.map((m) => ({ id: m.id, nome: m.nome }))} />}
       />
 
       {/* Indicadores */}
@@ -130,20 +122,24 @@ export default async function PaginaPainel({
       </div>
 
       <Extrato
-        lancamentos={lancamentos.map((l) => ({
-          id: l.id,
-          tipo: l.tipo,
-          categoria: l.categoria,
-          descricao: l.descricao,
-          valor: l.valor,
-          data: l.data.toISOString(),
-          status: l.status,
-          formaPagamento: l.formaPagamento,
-          automatico: l.automatico,
-          montador: l.montador?.nome ?? null,
-          ordemId: l.ordem?.id ?? null,
-          ordemNumero: l.ordem?.numero ?? null,
-        }))}
+        lancamentos={lancamentosPaginados.map((l) => {
+          const ordem = l.ordemId ? ordensMap.get(l.ordemId) : null;
+          const montador = l.montadorId ? usuariosMap.get(l.montadorId) : null;
+          return {
+            id: l.id,
+            tipo: l.tipo,
+            categoria: l.categoria,
+            descricao: l.descricao,
+            valor: l.valor,
+            data: l.data,
+            status: l.status,
+            formaPagamento: l.formaPagamento,
+            automatico: l.automatico,
+            montador: montador?.nome ?? null,
+            ordemId: ordem?.id ?? null,
+            ordemNumero: ordem?.numero ?? null,
+          };
+        })}
         filtro={filtro}
         pagina={paginaAtual}
         totalPaginas={Math.max(1, Math.ceil(totalFiltrado / porPagina))}
@@ -152,7 +148,7 @@ export default async function PaginaPainel({
           receitas: totalReceitas,
           despesas: totalDespesas,
         }}
-        montadores={montadores}
+        montadores={montadores.map((m) => ({ id: m.id, nome: m.nome }))}
       />
 
       <div id="notificacoes" className="scroll-mt-24">
@@ -162,9 +158,9 @@ export default async function PaginaPainel({
             tipo: n.tipo,
             titulo: n.titulo,
             mensagem: n.mensagem,
-            link: n.link,
+            link: n.link ?? null,
             lida: n.lida,
-            criadoEm: n.criadoEm.toISOString(),
+            criadoEm: n.criadoEm,
           }))}
         />
       </div>

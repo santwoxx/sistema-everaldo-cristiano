@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import {
+  dbOrdens,
+  dbClientes,
+  dbUsuarios,
+  dbOrcamentos,
+  dbLancamentos,
+  gerarId,
+} from "@/lib/firestore";
 import { exigirAdmin, exigirSessao } from "@/lib/auth";
 import {
   avaliarConclusao,
@@ -71,7 +78,7 @@ export async function salvarOrdem(
     descricao: d.descricao || null,
     endereco: d.endereco || null,
     cidade: d.cidade || null,
-    dataAgendada: d.dataAgendada ? new Date(`${d.dataAgendada}T12:00:00`) : null,
+    dataAgendada: d.dataAgendada ? new Date(`${d.dataAgendada}T12:00:00`).toISOString() : null,
     formaPagamento: d.formaPagamento,
     observacoes: d.observacoes || null,
     valorTotal,
@@ -82,22 +89,24 @@ export async function salvarOrdem(
   let ordemId = id;
 
   if (id) {
-    await prisma.ordemServico.update({ where: { id }, data: base });
+    await dbOrdens.atualizar(id, base);
   } else {
     const criada = await comNumeroSequencial("ordemServico", (numero) =>
-      prisma.ordemServico.create({
-        data: {
-          ...base,
-          numero,
-          tokenAssinatura: gerarToken(),
-          status: "AGENDADA",
-          checklist: {
-            create: CHECKLIST_PADRAO.map((descricao, ordemIndex) => ({
-              descricao,
-              ordemIndex,
-            })),
-          },
-        },
+      dbOrdens.criar({
+        ...base,
+        numero,
+        pago: false,
+        tokenAssinatura: gerarToken(),
+        status: "AGENDADA",
+        checklist: CHECKLIST_PADRAO.map((descricao, ordemIndex) => ({
+          id: gerarId(),
+          descricao,
+          ordemIndex,
+          concluido: false,
+        })),
+        itens: [],
+        fotos: [],
+        assinaturas: [],
       })
     );
     ordemId = criada.id;
@@ -118,14 +127,18 @@ export async function adicionarItem(formData: FormData) {
   const descricao = String(formData.get("descricao") ?? "").trim();
   if (!ordemId || !descricao) return;
 
-  await prisma.itemOrdem.create({
-    data: {
-      ordemId,
-      descricao,
-      quantidade: Math.max(1, paraNumero(formData.get("quantidade")) || 1),
-      valorUnitario: paraNumero(formData.get("valorUnitario")),
-    },
-  });
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
+
+  const novoItem = {
+    id: gerarId(),
+    descricao,
+    quantidade: Math.max(1, paraNumero(formData.get("quantidade")) || 1),
+    valorUnitario: paraNumero(formData.get("valorUnitario")),
+  };
+
+  const itens = [...(ordem.itens || []), novoItem];
+  await dbOrdens.atualizar(ordemId, { itens });
 
   await recalcularOrdem(ordemId);
   await sincronizarFinanceiro(ordemId);
@@ -135,12 +148,18 @@ export async function adicionarItem(formData: FormData) {
 export async function removerItem(formData: FormData) {
   await exigirAdmin();
   const id = String(formData.get("id") ?? "");
-  if (!id) return;
+  const ordemId = String(formData.get("ordemId") ?? "");
+  if (!id || !ordemId) return;
 
-  const item = await prisma.itemOrdem.delete({ where: { id } });
-  await recalcularOrdem(item.ordemId);
-  await sincronizarFinanceiro(item.ordemId);
-  revalidarTudo(item.ordemId);
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
+
+  const itens = (ordem.itens || []).filter((i) => i.id !== id);
+  await dbOrdens.atualizar(ordemId, { itens });
+
+  await recalcularOrdem(ordemId);
+  await sincronizarFinanceiro(ordemId);
+  revalidarTudo(ordemId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -150,16 +169,18 @@ export async function removerItem(formData: FormData) {
 export async function alternarChecklist(formData: FormData) {
   await exigirSessao();
   const id = String(formData.get("id") ?? "");
-  if (!id) return;
+  const ordemId = String(formData.get("ordemId") ?? "");
+  if (!id || !ordemId) return;
 
-  const item = await prisma.checklistItem.findUnique({ where: { id } });
-  if (!item) return;
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
 
-  await prisma.checklistItem.update({
-    where: { id },
-    data: { concluido: !item.concluido },
-  });
-  revalidarTudo(item.ordemId);
+  const checklist = (ordem.checklist || []).map((c) =>
+    c.id === id ? { ...c, concluido: !c.concluido } : c
+  );
+
+  await dbOrdens.atualizar(ordemId, { checklist });
+  revalidarTudo(ordemId);
 }
 
 export async function adicionarChecklist(formData: FormData) {
@@ -168,19 +189,35 @@ export async function adicionarChecklist(formData: FormData) {
   const descricao = String(formData.get("descricao") ?? "").trim();
   if (!ordemId || !descricao) return;
 
-  const total = await prisma.checklistItem.count({ where: { ordemId } });
-  await prisma.checklistItem.create({
-    data: { ordemId, descricao, ordemIndex: total },
-  });
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
+
+  const checklist = [
+    ...(ordem.checklist || []),
+    {
+      id: gerarId(),
+      descricao,
+      ordemIndex: (ordem.checklist || []).length,
+      concluido: false,
+    },
+  ];
+
+  await dbOrdens.atualizar(ordemId, { checklist });
   revalidarTudo(ordemId);
 }
 
 export async function removerChecklist(formData: FormData) {
   await exigirSessao();
   const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  const item = await prisma.checklistItem.delete({ where: { id } });
-  revalidarTudo(item.ordemId);
+  const ordemId = String(formData.get("ordemId") ?? "");
+  if (!id || !ordemId) return;
+
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
+
+  const checklist = (ordem.checklist || []).filter((c) => c.id !== id);
+  await dbOrdens.atualizar(ordemId, { checklist });
+  revalidarTudo(ordemId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -192,9 +229,9 @@ export async function iniciarExecucao(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  await prisma.ordemServico.update({
-    where: { id },
-    data: { status: "EM_ANDAMENTO", dataInicio: new Date() },
+  await dbOrdens.atualizar(id, {
+    status: "EM_ANDAMENTO",
+    dataInicio: new Date().toISOString(),
   });
   revalidarTudo(id);
 }
@@ -202,18 +239,18 @@ export async function iniciarExecucao(formData: FormData) {
 export async function alterarStatus(formData: FormData) {
   await exigirAdmin();
   const id = String(formData.get("id") ?? "");
-  const status = String(formData.get("status") ?? "");
+  const status = String(formData.get("status") ?? "") as any;
   if (!id || !status) return;
 
   const extras: Record<string, unknown> = {};
-  if (status === "EM_ANDAMENTO") extras.dataInicio = new Date();
-  if (status === "CONCLUIDA") extras.dataConclusao = new Date();
+  if (status === "EM_ANDAMENTO") extras.dataInicio = new Date().toISOString();
+  if (status === "CONCLUIDA") extras.dataConclusao = new Date().toISOString();
   if (status === "AGENDADA") {
     extras.dataInicio = null;
     extras.dataConclusao = null;
   }
 
-  await prisma.ordemServico.update({ where: { id }, data: { status, ...extras } });
+  await dbOrdens.atualizar(id, { status, ...extras });
   await sincronizarFinanceiro(id);
   revalidarTudo(id);
 }
@@ -223,10 +260,10 @@ export async function alternarPagamento(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const ordem = await prisma.ordemServico.findUnique({ where: { id } });
+  const ordem = await dbOrdens.buscarPorId(id);
   if (!ordem) return;
 
-  await prisma.ordemServico.update({ where: { id }, data: { pago: !ordem.pago } });
+  await dbOrdens.atualizar(id, { pago: !ordem.pago });
   await sincronizarFinanceiro(id);
   revalidarTudo(id);
 }
@@ -236,15 +273,17 @@ export async function excluirOrdem(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const assinaturas = await prisma.assinatura.count({ where: { ordemId: id } });
-  if (assinaturas > 0) {
+  const ordem = await dbOrdens.buscarPorId(id);
+  if (!ordem) return;
+
+  if (ordem.assinaturas && ordem.assinaturas.length > 0) {
     throw new Error(
       "Esta OS já possui assinatura digital e não pode ser excluída. Use o status 'Cancelada'."
     );
   }
 
-  await prisma.lancamento.deleteMany({ where: { ordemId: id } });
-  await prisma.ordemServico.delete({ where: { id } });
+  await dbLancamentos.excluirAutomaticosDaOrdem(id);
+  await dbOrdens.excluir(id);
   revalidarTudo();
   redirect("/ordens");
 }
@@ -259,23 +298,34 @@ export async function adicionarFoto(formData: FormData) {
   const dataUrl = String(formData.get("dataUrl") ?? "");
   if (!ordemId || !dataUrl.startsWith("data:image/")) return;
 
-  await prisma.fotoOrdem.create({
-    data: {
-      ordemId,
-      dataUrl,
-      etapa: String(formData.get("etapa") ?? "DEPOIS"),
-      legenda: String(formData.get("legenda") ?? "").trim() || null,
-    },
-  });
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
+
+  const novaFoto = {
+    id: gerarId(),
+    dataUrl,
+    etapa: (String(formData.get("etapa") ?? "DEPOIS")) as "ANTES" | "DEPOIS",
+    legenda: String(formData.get("legenda") ?? "").trim() || null,
+    criadoEm: new Date().toISOString(),
+  };
+
+  const fotos = [...(ordem.fotos || []), novaFoto];
+  await dbOrdens.atualizar(ordemId, { fotos });
   revalidarTudo(ordemId);
 }
 
 export async function removerFoto(formData: FormData) {
   await exigirSessao();
   const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  const foto = await prisma.fotoOrdem.delete({ where: { id } });
-  revalidarTudo(foto.ordemId);
+  const ordemId = String(formData.get("ordemId") ?? "");
+  if (!id || !ordemId) return;
+
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
+
+  const fotos = (ordem.fotos || []).filter((f) => f.id !== id);
+  await dbOrdens.atualizar(ordemId, { fotos });
+  revalidarTudo(ordemId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -287,75 +337,78 @@ export async function converterOrcamento(formData: FormData) {
   const orcamentoId = String(formData.get("orcamentoId") ?? "");
   if (!orcamentoId) return;
 
-  const orcamento = await prisma.orcamento.findUnique({
-    where: { id: orcamentoId },
-    include: { ordem: true },
-  });
+  const orcamento = await dbOrcamentos.buscarPorId(orcamentoId);
   if (!orcamento) return;
-  if (orcamento.ordem) redirect(`/ordens/${orcamento.ordem.id}`);
+
+  const todasOrdens = await dbOrdens.listar();
+  const jaConvertida = todasOrdens.find((o) => o.orcamentoId === orcamentoId);
+  if (jaConvertida) redirect(`/ordens/${jaConvertida.id}`);
 
   // Reaproveita o cadastro do cliente quando o telefone já existe na base.
   let clienteId = orcamento.clienteId;
   if (!clienteId) {
+    const clientes = await dbClientes.listar();
     const existente = orcamento.telefone
-      ? await prisma.cliente.findFirst({ where: { telefone: orcamento.telefone } })
+      ? clientes.find((c) => c.telefone === orcamento.telefone)
       : null;
 
-    clienteId =
-      existente?.id ??
-      (
-        await prisma.cliente.create({
-          data: {
-            nome: orcamento.nomeContato,
-            telefone: orcamento.telefone,
-            email: orcamento.email,
-            documento: orcamento.documento,
-            cep: orcamento.cep,
-            endereco: orcamento.endereco,
-            cidade: orcamento.cidade,
-            estado: orcamento.estado,
-          },
-        })
-      ).id;
+    if (existente) {
+      clienteId = existente.id;
+    } else {
+      const novoCliente = await dbClientes.criar({
+        nome: orcamento.nomeContato,
+        telefone: orcamento.telefone,
+        email: orcamento.email,
+        documento: orcamento.documento,
+        cep: orcamento.cep,
+        endereco: orcamento.endereco,
+        cidade: orcamento.cidade,
+        estado: orcamento.estado,
+      });
+      clienteId = novoCliente.id;
+    }
   }
 
-  const montadorPadrao = await prisma.usuario.findFirst({
-    where: { papel: "MONTADOR", ativo: true },
-    orderBy: { criadoEm: "asc" },
-  });
+  const montadores = await dbUsuarios.listar({ papel: "MONTADOR", ativo: true });
+  const montadorPadrao = montadores[0] || null;
 
   const valor = orcamento.valorProposto ?? 0;
   const comissaoPercent = montadorPadrao?.comissaoPadrao ?? 30;
 
   const ordem = await comNumeroSequencial("ordemServico", (numero) =>
-    prisma.ordemServico.create({
-      data: {
-        numero,
-        titulo: `${TIPOS_SERVICO[orcamento.tipoServico as keyof typeof TIPOS_SERVICO] ?? "Serviço"} — ${orcNumero(orcamento.numero)}`,
-        descricao: orcamento.descricao,
-        clienteId,
-        orcamentoId: orcamento.id,
-        endereco: orcamento.endereco,
-        cidade: orcamento.cidade,
-        dataAgendada: orcamento.prazoDesejado,
-        valorTotal: valor,
-        comissaoPercent,
-        comissaoValor: Number(((valor * comissaoPercent) / 100).toFixed(2)),
-        tokenAssinatura: gerarToken(),
-        status: "AGENDADA",
-        checklist: {
-          create: CHECKLIST_PADRAO.map((descricao, ordemIndex) => ({
-            descricao,
-            ordemIndex,
-          })),
-        },
-      },
+    dbOrdens.criar({
+      numero,
+      titulo: `${TIPOS_SERVICO[orcamento.tipoServico as keyof typeof TIPOS_SERVICO] ?? "Serviço"} — ${orcNumero(orcamento.numero)}`,
+      descricao: orcamento.descricao,
+      clienteId: clienteId!,
+      orcamentoId: orcamento.id,
+      montadorId: montadorPadrao?.id || null,
+      endereco: orcamento.endereco,
+      cidade: orcamento.cidade,
+      dataAgendada: orcamento.prazoDesejado,
+      valorTotal: valor,
+      comissaoPercent,
+      comissaoValor: Number(((valor * comissaoPercent) / 100).toFixed(2)),
+      tokenAssinatura: gerarToken(),
+      status: "AGENDADA",
+      pago: false,
+      formaPagamento: "PIX",
+      checklist: CHECKLIST_PADRAO.map((descricao, ordemIndex) => ({
+        id: gerarId(),
+        descricao,
+        ordemIndex,
+        concluido: false,
+      })),
+      itens: [],
+      fotos: [],
+      assinaturas: [],
     })
   );
 
-  await prisma.orcamento.update({
-    where: { id: orcamentoId },
-    data: { status: "CONVERTIDO", clienteId, respondidoEm: new Date() },
+  await dbOrcamentos.atualizar(orcamentoId, {
+    status: "CONVERTIDO",
+    clienteId,
+    respondidoEm: new Date().toISOString(),
   });
 
   await notificar({

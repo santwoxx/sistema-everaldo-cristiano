@@ -2,7 +2,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbOrdens, dbClientes, dbUsuarios } from "@/lib/firestore";
 import { exigirSessao } from "@/lib/auth";
 import { FORMAS_PAGAMENTO, STATUS_OS } from "@/lib/constants";
 import {
@@ -23,10 +23,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const os = await prisma.ordemServico.findUnique({
-    where: { id },
-    select: { numero: true },
-  });
+  const os = await dbOrdens.buscarPorId(id);
   return {
     title: os ? `Termo de Conclusão ${osNumero(os.numero)}` : "Comprovante",
   };
@@ -40,30 +37,37 @@ export default async function PaginaComprovante({
   await exigirSessao();
   const { id } = await params;
 
-  const os = await prisma.ordemServico.findUnique({
-    where: { id },
-    include: {
-      cliente: true,
-      montador: true,
-      itens: { orderBy: { id: "asc" } },
-      checklist: { orderBy: { ordemIndex: "asc" } },
-      assinaturas: true,
-    },
-  });
+  const [os, todosClientes, todosUsuarios] = await Promise.all([
+    dbOrdens.buscarPorId(id),
+    dbClientes.listar(),
+    dbUsuarios.listar(),
+  ]);
   if (!os) notFound();
 
-  const montador = os.assinaturas.find((a) => a.tipo === "MONTADOR");
-  const cliente = os.assinaturas.find((a) => a.tipo === "CLIENTE");
-  const enderecoCliente = [
-    os.cliente.endereco,
-    os.cliente.numero,
-    os.cliente.complemento,
-    os.cliente.bairro,
-    os.cliente.cidade,
-    os.cliente.estado,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const clienteObj = todosClientes.find((c) => c.id === os.clienteId);
+  const montadorObj = os.montadorId
+    ? todosUsuarios.find((u) => u.id === os.montadorId)
+    : null;
+
+  const assinaturas = os.assinaturas || [];
+  const montadorAssinatura = assinaturas.find((a) => a.tipo === "MONTADOR");
+  const clienteAssinatura = assinaturas.find((a) => a.tipo === "CLIENTE");
+
+  const enderecoCliente = clienteObj
+    ? [
+        clienteObj.endereco,
+        clienteObj.numero,
+        clienteObj.complemento,
+        clienteObj.bairro,
+        clienteObj.cidade,
+        clienteObj.estado,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : "";
+
+  const itens = os.itens || [];
+  const checklist = os.checklist || [];
 
   return (
     <div className="min-h-dvh bg-[#eef1f0] py-6 print:bg-white print:py-0">
@@ -112,14 +116,14 @@ export default async function PaginaComprovante({
             <h2 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-suave">
               Contratante
             </h2>
-            <p className="text-sm font-bold text-texto">{os.cliente.nome}</p>
-            {os.cliente.documento && (
-              <p className="text-xs text-suave">Doc.: {os.cliente.documento}</p>
+            <p className="text-sm font-bold text-texto">{clienteObj?.nome || "Cliente"}</p>
+            {clienteObj?.documento && (
+              <p className="text-xs text-suave">Doc.: {clienteObj.documento}</p>
             )}
-            {os.cliente.telefone && (
-              <p className="text-xs text-suave">{fmtTelefone(os.cliente.telefone)}</p>
+            {clienteObj?.telefone && (
+              <p className="text-xs text-suave">{fmtTelefone(clienteObj.telefone)}</p>
             )}
-            {os.cliente.email && <p className="text-xs text-suave">{os.cliente.email}</p>}
+            {clienteObj?.email && <p className="text-xs text-suave">{clienteObj.email}</p>}
             {enderecoCliente && (
               <p className="mt-1 text-xs leading-relaxed text-suave">{enderecoCliente}</p>
             )}
@@ -130,10 +134,10 @@ export default async function PaginaComprovante({
               Execução
             </h2>
             <p className="text-sm font-bold text-texto">
-              {os.montador?.nome ?? "Equipe EC Montagens"}
+              {montadorObj?.nome ?? "Equipe EC Montagens"}
             </p>
-            {os.montador?.documento && (
-              <p className="text-xs text-suave">Doc.: {os.montador.documento}</p>
+            {montadorObj?.documento && (
+              <p className="text-xs text-suave">Doc.: {montadorObj.documento}</p>
             )}
             <dl className="mt-2 space-y-0.5 text-xs text-suave">
               <div className="flex gap-2">
@@ -176,7 +180,7 @@ export default async function PaginaComprovante({
         </section>
 
         {/* Itens */}
-        {os.itens.length > 0 && (
+        {itens.length > 0 && (
           <section className="quebra-pagina mt-6">
             <h2 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-suave">
               Discriminação dos itens
@@ -191,7 +195,7 @@ export default async function PaginaComprovante({
                 </tr>
               </thead>
               <tbody>
-                {os.itens.map((i) => (
+                {itens.map((i) => (
                   <tr key={i.id} className="border-b border-[#f1f4f3]">
                     <td className="py-2 text-texto">{i.descricao}</td>
                     <td className="py-2 text-center text-suave">
@@ -225,13 +229,13 @@ export default async function PaginaComprovante({
         </section>
 
         {/* Checklist */}
-        {os.checklist.length > 0 && (
+        {checklist.length > 0 && (
           <section className="quebra-pagina mt-6">
             <h2 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-suave">
               Checklist de qualidade
             </h2>
             <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-              {os.checklist.map((c) => (
+              {checklist.map((c) => (
                 <li key={c.id} className="flex items-start gap-2 text-xs">
                   <span
                     className={`mt-[3px] grid h-3.5 w-3.5 shrink-0 place-items-center rounded-sm border text-[9px] font-bold ${
@@ -267,24 +271,24 @@ export default async function PaginaComprovante({
         <section className="quebra-pagina mt-7 grid grid-cols-2 gap-8">
           <AssinaturaImpressa
             papel="Montador responsável"
-            assinatura={montador}
-            fallback={os.montador?.nome}
+            assinatura={montadorAssinatura}
+            fallback={montadorObj?.nome}
           />
           <AssinaturaImpressa
             papel="Cliente / Contratante"
-            assinatura={cliente}
-            fallback={os.cliente.nome}
+            assinatura={clienteAssinatura}
+            fallback={clienteObj?.nome}
           />
         </section>
 
         {/* Autenticidade */}
-        {(montador || cliente) && (
+        {(montadorAssinatura || clienteAssinatura) && (
           <section className="quebra-pagina mt-7 rounded-lg bg-[#f7f9f8] p-4">
             <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-marca-700">
               <ShieldCheck size={12} /> Registro de autenticidade
             </p>
             <div className="mt-2 grid grid-cols-2 gap-4 text-[10px] leading-relaxed text-suave">
-              {[montador, cliente].filter(Boolean).map((a) => (
+              {[montadorAssinatura, clienteAssinatura].filter(Boolean).map((a) => (
                 <div key={a!.id}>
                   <p className="font-semibold text-texto">
                     {a!.tipo === "MONTADOR" ? "Montador" : "Cliente"}: {a!.nome}
@@ -323,9 +327,9 @@ function AssinaturaImpressa({
   papel: string;
   assinatura?: {
     nome: string;
-    documento: string | null;
+    documento?: string | null;
     imagem: string;
-    assinadoEm: Date;
+    assinadoEm: string;
   };
   fallback?: string;
 }) {

@@ -8,8 +8,8 @@ import {
   Package,
   Phone,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
-import { STATUS_ORCAMENTO, TIPOS_SERVICO } from "@/lib/constants";
+import { dbOrcamentos, dbOrdens } from "@/lib/firestore";
+import { STATUS_ORCAMENTO, TIPOS_SERVICO, StatusOrcamento } from "@/lib/constants";
 import {
   data as fmtData,
   dataHora,
@@ -29,21 +29,18 @@ export default async function PaginaOrcamentos({
 }) {
   const { status = "todos" } = await searchParams;
 
-  const [orcamentos, contagens] = await Promise.all([
-    prisma.orcamento.findMany({
-      where: status !== "todos" ? { status } : {},
-      orderBy: { criadoEm: "desc" },
-      include: { ordem: { select: { id: true, numero: true } } },
-      take: 100,
-    }),
-    prisma.orcamento.groupBy({ by: ["status"], _count: true }),
+  const [todosOrcamentos, todasOrdens] = await Promise.all([
+    dbOrcamentos.listar(status !== "todos" ? { status: status as StatusOrcamento } : undefined),
+    dbOrdens.listar(),
   ]);
 
-  const total = contagens.reduce((a, c) => a + c._count, 0);
-  const contar = (s: string) => contagens.find((c) => c.status === s)?._count ?? 0;
+  const ordensPorOrcamento = new Map(todasOrdens.filter((o) => o.orcamentoId).map((o) => [o.orcamentoId!, o]));
+
+  const todos = await dbOrcamentos.listar();
+  const contar = (s: string) => todos.filter((o) => o.status === s).length;
 
   const abas = [
-    { chave: "todos", rotulo: "Todos", n: total },
+    { chave: "todos", rotulo: "Todos", n: todos.length },
     ...Object.entries(STATUS_ORCAMENTO).map(([chave, rotulo]) => ({
       chave,
       rotulo,
@@ -79,7 +76,7 @@ export default async function PaginaOrcamentos({
       </div>
 
       <Painel semPadding>
-        {orcamentos.length === 0 ? (
+        {todosOrcamentos.length === 0 ? (
           <Vazio
             icone={<FileText size={20} />}
             titulo="Nenhum orçamento neste filtro"
@@ -92,72 +89,75 @@ export default async function PaginaOrcamentos({
           />
         ) : (
           <ul className="divide-y divide-[#f1f4f3]">
-            {orcamentos.map((o) => (
-              <li key={o.id}>
-                <Link
-                  href={`/orcamentos/${o.id}`}
-                  className="flex flex-wrap items-start gap-4 px-4 py-4 transition-colors hover:bg-[#fafbfa] sm:px-5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[11px] font-bold text-suave">
-                        {orcNumero(o.numero)}
-                      </span>
-                      <StatusOrc status={o.status} />
-                      {o.ordem && (
-                        <span className="text-[11px] font-medium text-marca-600">
-                          → OS-{String(o.ordem.numero).padStart(4, "0")}
+            {todosOrcamentos.map((o) => {
+              const ordem = ordensPorOrcamento.get(o.id);
+              return (
+                <li key={o.id}>
+                  <Link
+                    href={`/orcamentos/${o.id}`}
+                    className="flex flex-wrap items-start gap-4 px-4 py-4 transition-colors hover:bg-[#fafbfa] sm:px-5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[11px] font-bold text-suave">
+                          {orcNumero(o.numero)}
                         </span>
-                      )}
-                    </div>
+                        <StatusOrc status={o.status} />
+                        {ordem && (
+                          <span className="text-[11px] font-medium text-marca-600">
+                            → OS-{String(ordem.numero).padStart(4, "0")}
+                          </span>
+                        )}
+                      </div>
 
-                    <p className="mt-1.5 text-sm font-semibold text-texto">
-                      {o.nomeContato}
-                    </p>
-                    <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-suave">
-                      {o.descricao}
-                    </p>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-suave">
-                      <span className="flex items-center gap-1">
-                        <Package size={12} />
-                        {TIPOS_SERVICO[o.tipoServico as keyof typeof TIPOS_SERVICO] ??
-                          o.tipoServico}{" "}
-                        · {o.quantidadeItens} item(ns)
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Phone size={12} /> {fmtTelefone(o.telefone)}
-                      </span>
-                      {o.cidade && (
-                        <span className="flex items-center gap-1">
-                          <MapPin size={12} /> {o.cidade}
-                          {o.estado ? `/${o.estado}` : ""}
-                        </span>
-                      )}
-                      {o.prazoDesejado && (
-                        <span className="flex items-center gap-1">
-                          <CalendarDays size={12} /> deseja para{" "}
-                          {fmtData(o.prazoDesejado)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    {o.valorProposto ? (
-                      <p className="text-base font-bold text-texto">
-                        {moeda(o.valorProposto)}
+                      <p className="mt-1.5 text-sm font-semibold text-texto">
+                        {o.nomeContato}
                       </p>
-                    ) : (
-                      <p className="text-xs font-medium text-suave">Sem proposta</p>
-                    )}
-                    <p className="mt-0.5 text-[11px] text-suave">
-                      {dataHora(o.criadoEm)}
-                    </p>
-                  </div>
-                </Link>
-              </li>
-            ))}
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-suave">
+                        {o.descricao}
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-suave">
+                        <span className="flex items-center gap-1">
+                          <Package size={12} />
+                          {TIPOS_SERVICO[o.tipoServico as keyof typeof TIPOS_SERVICO] ??
+                            o.tipoServico}{" "}
+                          · {o.quantidadeItens} item(ns)
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Phone size={12} /> {fmtTelefone(o.telefone)}
+                        </span>
+                        {o.cidade && (
+                          <span className="flex items-center gap-1">
+                            <MapPin size={12} /> {o.cidade}
+                            {o.estado ? `/${o.estado}` : ""}
+                          </span>
+                        )}
+                        {o.prazoDesejado && (
+                          <span className="flex items-center gap-1">
+                            <CalendarDays size={12} /> deseja para{" "}
+                            {fmtData(o.prazoDesejado)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      {o.valorProposto ? (
+                        <p className="text-base font-bold text-texto">
+                          {moeda(o.valorProposto)}
+                        </p>
+                      ) : (
+                        <p className="text-xs font-medium text-suave">Sem proposta</p>
+                      )}
+                      <p className="mt-0.5 text-[11px] text-suave">
+                        {dataHora(o.criadoEm)}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Painel>

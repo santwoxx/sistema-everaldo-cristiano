@@ -9,7 +9,7 @@ import {
   Wallet,
   Wrench,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbOrdens, dbLancamentos, dbClientes } from "@/lib/firestore";
 import { exigirSessao } from "@/lib/auth";
 import { data as fmtData, moeda, osNumero } from "@/lib/format";
 import { StatusOrdem, Vazio } from "@/components/ui";
@@ -21,43 +21,49 @@ export default async function PaginaMontador() {
   const sessao = await exigirSessao();
   const ehAdmin = sessao.papel === "ADMIN";
 
-  // O admin acompanha todas as OS; o montador vê apenas as suas.
-  const escopo = ehAdmin ? {} : { montadorId: sessao.id };
-
-  const [abertas, concluidas, comissaoMes, totalConcluidas] = await Promise.all([
-    prisma.ordemServico.findMany({
-      where: {
-        ...escopo,
-        status: { in: ["AGENDADA", "EM_ANDAMENTO", "AGUARDANDO_ASSINATURA"] },
-      },
-      orderBy: [{ dataAgendada: "asc" }],
-      include: {
-        cliente: { select: { nome: true } },
-        assinaturas: { select: { tipo: true } },
-        checklist: { select: { concluido: true } },
-      },
-    }),
-    prisma.ordemServico.findMany({
-      where: { ...escopo, status: "CONCLUIDA" },
-      orderBy: { dataConclusao: "desc" },
-      take: 5,
-      include: { cliente: { select: { nome: true } } },
-    }),
-    prisma.lancamento.aggregate({
-      _sum: { valor: true },
-      where: {
-        categoria: "COMISSAO",
-        status: { not: "CANCELADO" },
-        ...(ehAdmin ? {} : { montadorId: sessao.id }),
-        data: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
-      },
-    }),
-    prisma.ordemServico.count({ where: { ...escopo, status: "CONCLUIDA" } }),
+  const [todasOrdens, todosLancamentos, todosClientes] = await Promise.all([
+    dbOrdens.listar(),
+    dbLancamentos.listar(),
+    dbClientes.listar(),
   ]);
+
+  const clientesMap = new Map(todosClientes.map((c) => [c.id, c]));
+
+  const ordensDoEscopo = todasOrdens.filter(
+    (os) => ehAdmin || os.montadorId === sessao.id
+  );
+
+  const abertas = ordensDoEscopo
+    .filter((os) => ["AGENDADA", "EM_ANDAMENTO", "AGUARDANDO_ASSINATURA"].includes(os.status))
+    .sort((a, b) => {
+      const dataA = a.dataAgendada ? new Date(a.dataAgendada).getTime() : 0;
+      const dataB = b.dataAgendada ? new Date(b.dataAgendada).getTime() : 0;
+      return dataA - dataB;
+    });
+
+  const concluidas = ordensDoEscopo
+    .filter((os) => os.status === "CONCLUIDA")
+    .sort((a, b) => {
+      const dataA = a.dataConclusao ? new Date(a.dataConclusao).getTime() : 0;
+      const dataB = b.dataConclusao ? new Date(b.dataConclusao).getTime() : 0;
+      return dataB - dataA;
+    })
+    .slice(0, 5);
+
+  const totalConcluidas = ordensDoEscopo.filter((os) => os.status === "CONCLUIDA").length;
+
+  const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+  const comissaoMes = todosLancamentos
+    .filter((l) => {
+      if (l.categoria !== "COMISSAO" || l.status === "CANCELADO") return false;
+      if (!ehAdmin && l.montadorId !== sessao.id) return false;
+      return new Date(l.data).getTime() >= inicioMes;
+    })
+    .reduce((acc, l) => acc + (l.valor || 0), 0);
 
   const hoje = new Date().toDateString();
   const deHoje = abertas.filter(
-    (os) => os.dataAgendada && os.dataAgendada.toDateString() === hoje
+    (os) => os.dataAgendada && new Date(os.dataAgendada).toDateString() === hoje
   );
   const proximas = abertas.filter((os) => !deHoje.includes(os));
 
@@ -77,7 +83,7 @@ export default async function PaginaMontador() {
         />
         <Indicador
           rotulo="Comissão no mês"
-          valor={moeda(comissaoMes._sum.valor ?? 0)}
+          valor={moeda(comissaoMes)}
           icone={<Wallet size={15} />}
           compacto
         />
@@ -106,7 +112,16 @@ export default async function PaginaMontador() {
         ) : (
           <ul className="space-y-2.5">
             {deHoje.map((os) => (
-              <CartaoOS key={os.id} os={os} destaque />
+              <CartaoOS
+                key={os.id}
+                os={{
+                  ...os,
+                  cliente: { nome: clientesMap.get(os.clienteId)?.nome || "Cliente" },
+                  assinaturas: os.assinaturas || [],
+                  checklist: os.checklist || [],
+                }}
+                destaque
+              />
             ))}
           </ul>
         )}
@@ -120,7 +135,15 @@ export default async function PaginaMontador() {
           </h2>
           <ul className="space-y-2.5">
             {proximas.map((os) => (
-              <CartaoOS key={os.id} os={os} />
+              <CartaoOS
+                key={os.id}
+                os={{
+                  ...os,
+                  cliente: { nome: clientesMap.get(os.clienteId)?.nome || "Cliente" },
+                  assinaturas: os.assinaturas || [],
+                  checklist: os.checklist || [],
+                }}
+              />
             ))}
           </ul>
         </section>
@@ -147,7 +170,7 @@ export default async function PaginaMontador() {
                       {os.titulo}
                     </span>
                     <span className="block truncate text-[11px] text-suave">
-                      {os.cliente.nome} · {fmtData(os.dataConclusao)}
+                      {clientesMap.get(os.clienteId)?.nome || "Cliente"} · {fmtData(os.dataConclusao)}
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
@@ -197,9 +220,9 @@ type OSCartao = {
   numero: number;
   titulo: string;
   status: string;
-  dataAgendada: Date | null;
-  endereco: string | null;
-  cidade: string | null;
+  dataAgendada?: string | null;
+  endereco?: string | null;
+  cidade?: string | null;
   comissaoValor: number;
   cliente: { nome: string };
   assinaturas: { tipo: string }[];
@@ -227,7 +250,7 @@ function CartaoOS({ os, destaque }: { os: OSCartao; destaque?: boolean }) {
               <span className="font-mono text-[10px] font-bold text-suave">
                 {osNumero(os.numero)}
               </span>
-              <StatusOrdem status={os.status} />
+              <StatusOrdem status={os.status as any} />
             </div>
             <p className="mt-1.5 text-sm font-bold leading-snug text-texto">
               {os.titulo}

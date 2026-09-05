@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { dbOrcamentos, dbLinks, dbOrdens } from "@/lib/firestore";
 import { exigirAdmin } from "@/lib/auth";
 import { comNumeroSequencial, notificar } from "@/lib/negocio";
 import { dadosDoForm, texto, textoOuNulo } from "@/lib/formulario";
@@ -44,16 +44,14 @@ export async function enviarOrcamentoPublico(
 ): Promise<EstadoOrcamento> {
   const token = String(formData.get("token") ?? "");
 
-  const link = await prisma.linkPublico.findUnique({ where: { token } });
+  const link = await dbLinks.buscarPorToken(token);
   if (!link || !link.ativo) {
     return { erro: "Este link não está mais disponível. Solicite um novo à EC Montagens." };
   }
-  if (link.expiraEm && link.expiraEm < new Date()) {
+  if (link.expiraEm && new Date(link.expiraEm).getTime() < Date.now()) {
     return { erro: "Este link expirou. Solicite um novo à EC Montagens." };
   }
 
-  // dadosDoForm() omite os campos que o formulário não enviou — campos
-  // opcionais ausentes chegam como `undefined`, e não como `null`.
   const bruto = dadosDoForm(formData);
   const dados = esquemaPublico.safeParse({
     ...bruto,
@@ -66,8 +64,7 @@ export async function enviarOrcamentoPublico(
   const d = dados.data;
 
   const orcamento = await comNumeroSequencial("orcamento", (numero) =>
-    prisma.orcamento.create({
-    data: {
+    dbOrcamentos.criar({
       numero,
       nomeContato: d.nomeContato,
       telefone: d.telefone,
@@ -80,17 +77,14 @@ export async function enviarOrcamentoPublico(
       tipoServico: d.tipoServico,
       descricao: d.descricao,
       quantidadeItens: d.quantidadeItens,
-      prazoDesejado: d.prazoDesejado ? new Date(`${d.prazoDesejado}T12:00:00`) : null,
+      prazoDesejado: d.prazoDesejado ? new Date(`${d.prazoDesejado}T12:00:00`).toISOString() : null,
       linkId: link.id,
       status: "NOVO",
-    },
+      itensJson: "[]",
     })
   );
 
-  await prisma.linkPublico.update({
-    where: { id: link.id },
-    data: { envios: { increment: 1 } },
-  });
+  await dbLinks.incrementarEnvios(link.id);
 
   await notificar({
     tipo: "ORCAMENTO",
@@ -117,17 +111,14 @@ export async function atualizarOrcamento(
   const id = String(formData.get("id") ?? "");
   if (!id) return { erro: "Orçamento não encontrado." };
 
-  const status = texto(formData, "status") || "NOVO";
+  const status = (texto(formData, "status") || "NOVO") as any;
   const valorBruto = texto(formData, "valorProposto");
 
-  await prisma.orcamento.update({
-    where: { id },
-    data: {
-      status,
-      valorProposto: valorBruto ? paraNumero(valorBruto) : null,
-      observacoesInternas: textoOuNulo(formData, "observacoesInternas"),
-      respondidoEm: status === "NOVO" ? null : new Date(),
-    },
+  await dbOrcamentos.atualizar(id, {
+    status,
+    valorProposto: valorBruto ? paraNumero(valorBruto) : null,
+    observacoesInternas: textoOuNulo(formData, "observacoesInternas"),
+    respondidoEm: status === "NOVO" ? null : new Date().toISOString(),
   });
 
   revalidatePath("/orcamentos");
@@ -141,9 +132,9 @@ export async function marcarEmAnalise(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  await prisma.orcamento.update({
-    where: { id },
-    data: { status: "EM_ANALISE", respondidoEm: new Date() },
+  await dbOrcamentos.atualizar(id, {
+    status: "EM_ANALISE",
+    respondidoEm: new Date().toISOString(),
   });
   revalidatePath("/orcamentos");
   revalidatePath(`/orcamentos/${id}`);
@@ -154,15 +145,13 @@ export async function excluirOrcamento(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const orcamento = await prisma.orcamento.findUnique({
-    where: { id },
-    include: { ordem: true },
-  });
-  if (orcamento?.ordem) {
+  const todasOrdens = await dbOrdens.listar();
+  const vinculada = todasOrdens.find((o) => o.orcamentoId === id);
+  if (vinculada) {
     throw new Error("Este orçamento já virou ordem de serviço e não pode ser excluído.");
   }
 
-  await prisma.orcamento.delete({ where: { id } });
+  await dbOrcamentos.excluir(id);
   revalidatePath("/orcamentos");
   revalidatePath("/painel");
 }

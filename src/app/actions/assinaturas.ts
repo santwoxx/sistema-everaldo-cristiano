@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { dbOrdens, dbClientes, gerarId, AssinaturaDoc } from "@/lib/firestore";
 import { dadosAuditoria } from "@/lib/auth";
 import { avaliarConclusao, hashAssinatura, notificar } from "@/lib/negocio";
 import { osNumero } from "@/lib/format";
@@ -23,10 +23,6 @@ const esquema = z.object({
 
 /**
  * Registra a assinatura digital de uma das partes.
- *
- * Cada assinatura guarda: nome, documento, traço (PNG), data/hora, IP,
- * navegador e um hash SHA-256 do conteúdo — a trilha que comprova
- * o aceite caso o serviço seja questionado depois.
  */
 export async function assinar(
   _estado: EstadoAssinatura,
@@ -39,54 +35,49 @@ export async function assinar(
   }
   const d = dados.data;
 
-  const ordem = await prisma.ordemServico.findUnique({
-    where: { id: d.ordemId },
-    include: { cliente: true, assinaturas: true },
-  });
+  const ordem = await dbOrdens.buscarPorId(d.ordemId);
   if (!ordem) return { erro: "Ordem de serviço não encontrada." };
   if (ordem.status === "CANCELADA") {
     return { erro: "Esta ordem de serviço está cancelada." };
   }
-  if (ordem.assinaturas.some((a) => a.tipo === d.tipo)) {
+  if ((ordem.assinaturas || []).some((a) => a.tipo === d.tipo)) {
     return { erro: "Esta parte já assinou o documento." };
   }
 
-  const assinadoEm = new Date();
+  const assinadoEm = new Date().toISOString();
   const { ip, userAgent } = await dadosAuditoria();
 
-  await prisma.assinatura.create({
-    data: {
+  const novaAssinatura: AssinaturaDoc = {
+    id: gerarId(),
+    tipo: d.tipo,
+    nome: d.nome,
+    documento: d.documento || null,
+    imagem: d.imagem,
+    assinadoEm,
+    ip,
+    userAgent,
+    hash: hashAssinatura({
       ordemId: ordem.id,
+      numero: ordem.numero,
       tipo: d.tipo,
       nome: d.nome,
-      documento: d.documento || null,
+      valorTotal: ordem.valorTotal,
       imagem: d.imagem,
       assinadoEm,
-      ip,
-      userAgent,
-      hash: hashAssinatura({
-        ordemId: ordem.id,
-        numero: ordem.numero,
-        tipo: d.tipo,
-        nome: d.nome,
-        valorTotal: ordem.valorTotal,
-        imagem: d.imagem,
-        assinadoEm,
-      }),
-    },
-  });
+    }),
+  };
+
+  const assinaturas = [...(ordem.assinaturas || []), novaAssinatura];
+  const atualizacoes: Partial<typeof ordem> = { assinaturas };
 
   // Avaliação opcional deixada pelo cliente no mesmo envio.
   const nota = Number(formData.get("nota") ?? 0);
   if (d.tipo === "CLIENTE" && nota >= 1 && nota <= 5) {
-    await prisma.ordemServico.update({
-      where: { id: ordem.id },
-      data: {
-        avaliacaoNota: nota,
-        avaliacaoComentario: String(formData.get("comentario") ?? "").trim() || null,
-      },
-    });
+    atualizacoes.avaliacaoNota = nota;
+    atualizacoes.avaliacaoComentario = String(formData.get("comentario") ?? "").trim() || null;
   }
+
+  await dbOrdens.atualizar(ordem.id, atualizacoes);
 
   await notificar({
     tipo: "ASSINATURA",
@@ -114,12 +105,9 @@ export async function avaliarServico(formData: FormData) {
   const nota = Number(formData.get("nota") ?? 0);
   if (!ordemId || nota < 1 || nota > 5) return;
 
-  await prisma.ordemServico.update({
-    where: { id: ordemId },
-    data: {
-      avaliacaoNota: nota,
-      avaliacaoComentario: String(formData.get("comentario") ?? "").trim() || null,
-    },
+  await dbOrdens.atualizar(ordemId, {
+    avaliacaoNota: nota,
+    avaliacaoComentario: String(formData.get("comentario") ?? "").trim() || null,
   });
 
   revalidatePath(`/ordens/${ordemId}`);
@@ -127,23 +115,28 @@ export async function avaliarServico(formData: FormData) {
 
 /**
  * Anula uma assinatura (apenas o admin, para corrigir um registro equivocado).
- * A OS volta para AGUARDANDO_ASSINATURA e o financeiro é recalculado.
  */
 export async function anularAssinatura(formData: FormData) {
   const { exigirAdmin } = await import("@/lib/auth");
   await exigirAdmin();
 
   const id = String(formData.get("id") ?? "");
-  if (!id) return;
+  const ordemId = String(formData.get("ordemId") ?? "");
+  if (!id || !ordemId) return;
 
-  const assinatura = await prisma.assinatura.delete({ where: { id } });
-  await prisma.ordemServico.update({
-    where: { id: assinatura.ordemId },
-    data: { status: "AGUARDANDO_ASSINATURA", dataConclusao: null },
+  const ordem = await dbOrdens.buscarPorId(ordemId);
+  if (!ordem) return;
+
+  const assinaturas = (ordem.assinaturas || []).filter((a) => a.id !== id);
+  await dbOrdens.atualizar(ordemId, {
+    assinaturas,
+    status: "AGARDANDO_ASSINATURA" as any,
+    dataConclusao: null,
   });
-  await avaliarConclusao(assinatura.ordemId);
+
+  await avaliarConclusao(ordemId);
 
   revalidatePath("/painel");
   revalidatePath("/ordens");
-  revalidatePath(`/ordens/${assinatura.ordemId}`);
+  revalidatePath(`/ordens/${ordemId}`);
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Contact, MapPin, Phone, Search, Wrench } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbClientes, dbOrdens, dbOrcamentos } from "@/lib/firestore";
 import {
   iniciais,
   moeda,
@@ -23,25 +23,27 @@ export default async function PaginaClientes({
   const { q = "" } = await searchParams;
   const busca = q.trim();
 
-  const clientes = await prisma.cliente.findMany({
-    where: busca
-      ? {
-          OR: [
-            { nome: { contains: busca } },
-            { telefone: { contains: busca } },
-            { email: { contains: busca } },
-            { cidade: { contains: busca } },
-            { documento: { contains: busca } },
-          ],
-        }
-      : {},
-    orderBy: { nome: "asc" },
-    include: {
-      ordens: {
-        select: { id: true, valorTotal: true, status: true, dataConclusao: true },
-      },
-      _count: { select: { orcamentos: true } },
-    },
+  const [todosClientes, todasOrdens, todosOrcamentos] = await Promise.all([
+    dbClientes.listar(busca),
+    dbOrdens.listar(),
+    dbOrcamentos.listar(),
+  ]);
+
+  const ordensPorCliente = new Map<string, typeof todasOrdens>();
+  todasOrdens.forEach((o) => {
+    const list = ordensPorCliente.get(o.clienteId) || [];
+    list.push(o);
+    ordensPorCliente.set(o.clienteId, list);
+  });
+
+  const orcamentosPorCliente = new Map<string, number>();
+  todosOrcamentos.forEach((orc) => {
+    if (orc.clienteId) {
+      orcamentosPorCliente.set(
+        orc.clienteId,
+        (orcamentosPorCliente.get(orc.clienteId) || 0) + 1
+      );
+    }
   });
 
   return (
@@ -63,7 +65,7 @@ export default async function PaginaClientes({
         <FormularioCliente />
       </div>
 
-      {clientes.length === 0 ? (
+      {todosClientes.length === 0 ? (
         <Painel semPadding>
           <Vazio
             icone={<Contact size={20} />}
@@ -77,13 +79,16 @@ export default async function PaginaClientes({
         </Painel>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {clientes.map((c) => {
-            const concluidas = c.ordens.filter((o) => o.status === "CONCLUIDA");
-            const faturado = concluidas.reduce((a, o) => a + o.valorTotal, 0);
+          {todosClientes.map((c) => {
+            const ordens = ordensPorCliente.get(c.id) || [];
+            const orcamentosCount = orcamentosPorCliente.get(c.id) || 0;
+
+            const concluidas = ordens.filter((o) => o.status === "CONCLUIDA");
+            const faturado = concluidas.reduce((a, o) => a + (o.valorTotal || 0), 0);
             const ultima = concluidas
               .map((o) => o.dataConclusao)
               .filter(Boolean)
-              .sort((a, b) => (b as Date).getTime() - (a as Date).getTime())[0];
+              .sort((a, b) => new Date(b!).getTime() - new Date(a!).getTime())[0];
 
             const endereco = [c.endereco, c.numero, c.bairro, c.cidade, c.estado]
               .filter(Boolean)
@@ -105,18 +110,18 @@ export default async function PaginaClientes({
                     inicial={{
                       id: c.id,
                       nome: c.nome,
-                      telefone: c.telefone,
-                      email: c.email,
-                      documento: c.documento,
-                      cep: c.cep,
-                      endereco: c.endereco,
-                      numero: c.numero,
-                      complemento: c.complemento,
-                      bairro: c.bairro,
-                      cidade: c.cidade,
-                      estado: c.estado,
-                      observacoes: c.observacoes,
-                      temOrdens: c.ordens.length > 0,
+                      telefone: c.telefone ?? null,
+                      email: c.email ?? null,
+                      documento: c.documento ?? null,
+                      cep: c.cep ?? null,
+                      endereco: c.endereco ?? null,
+                      numero: c.numero ?? null,
+                      complemento: c.complemento ?? null,
+                      bairro: c.bairro ?? null,
+                      cidade: c.cidade ?? null,
+                      estado: c.estado ?? null,
+                      observacoes: c.observacoes ?? null,
+                      temOrdens: ordens.length > 0,
                     }}
                   />
                 </div>
@@ -145,11 +150,11 @@ export default async function PaginaClientes({
 
                 <div className="mt-3 grid grid-cols-3 gap-2 border-t border-borda pt-3 text-center">
                   <div>
-                    <p className="text-sm font-bold text-texto">{c.ordens.length}</p>
+                    <p className="text-sm font-bold text-texto">{ordens.length}</p>
                     <p className="text-[10px] uppercase tracking-wide text-suave">OS</p>
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-texto">{c._count.orcamentos}</p>
+                    <p className="text-sm font-bold text-texto">{orcamentosCount}</p>
                     <p className="text-[10px] uppercase tracking-wide text-suave">Orç.</p>
                   </div>
                   <div>
@@ -166,7 +171,7 @@ export default async function PaginaClientes({
                   </p>
                 )}
 
-                {c.ordens.length > 0 && (
+                {ordens.length > 0 && (
                   <Link
                     href={`/ordens?q=${encodeURIComponent(c.nome)}`}
                     className="btn btn-claro mt-3 w-full !py-2 !text-xs"

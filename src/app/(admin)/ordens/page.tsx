@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarDays, MapPin, PenLine, Search, Wrench } from "lucide-react";
-import { prisma } from "@/lib/prisma";
-import { STATUS_OS } from "@/lib/constants";
+import { dbOrdens, dbClientes, dbUsuarios } from "@/lib/firestore";
+import { STATUS_OS, StatusOS } from "@/lib/constants";
 import { data as fmtData, iniciais, moeda, osNumero } from "@/lib/format";
 import { Etiqueta, Painel, StatusOrdem, Vazio } from "@/components/ui";
 import { FormularioOrdem } from "./formulario-ordem";
@@ -16,52 +16,35 @@ export default async function PaginaOrdens({
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
   const { status = "todas", q = "" } = await searchParams;
-  const busca = q.trim();
+  const busca = q.trim().toLowerCase();
 
-  const where = {
-    ...(status !== "todas" ? { status } : {}),
-    ...(busca
-      ? {
-          OR: [
-            { titulo: { contains: busca } },
-            { cliente: { is: { nome: { contains: busca } } } },
-            { endereco: { contains: busca } },
-            { cidade: { contains: busca } },
-          ],
-        }
-      : {}),
-  };
-
-  const [ordens, clientes, montadores, contagens] = await Promise.all([
-    prisma.ordemServico.findMany({
-      where,
-      orderBy: [{ dataAgendada: "desc" }, { criadoEm: "desc" }],
-      include: {
-        cliente: { select: { id: true, nome: true } },
-        montador: { select: { nome: true, corAvatar: true } },
-        assinaturas: { select: { tipo: true } },
-        _count: { select: { itens: true } },
-      },
-      take: 100,
-    }),
-    prisma.cliente.findMany({
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true, endereco: true, numero: true, cidade: true },
-    }),
-    prisma.usuario.findMany({
-      where: { papel: "MONTADOR", ativo: true },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true, comissaoPadrao: true },
-    }),
-    prisma.ordemServico.groupBy({ by: ["status"], _count: true }),
+  const [todasOrdens, todosClientes, todosMontadores] = await Promise.all([
+    dbOrdens.listar(status !== "todas" ? { status: status as StatusOS } : undefined),
+    dbClientes.listar(),
+    dbUsuarios.listar({ papel: "MONTADOR", ativo: true }),
   ]);
 
-  const total = contagens.reduce((a, c) => a + c._count, 0);
-  const contarStatus = (s: string) =>
-    contagens.find((c) => c.status === s)?._count ?? 0;
+  const clientesMap = new Map(todosClientes.map((c) => [c.id, c]));
+  const montadoresMap = new Map(todosMontadores.map((m) => [m.id, m]));
+
+  let ordens = todasOrdens;
+  if (busca) {
+    ordens = ordens.filter((os) => {
+      const clienteNome = (clientesMap.get(os.clienteId)?.nome || "").toLowerCase();
+      return (
+        os.titulo.toLowerCase().includes(busca) ||
+        clienteNome.includes(busca) ||
+        (os.endereco || "").toLowerCase().includes(busca) ||
+        (os.cidade || "").toLowerCase().includes(busca)
+      );
+    });
+  }
+
+  const todasParaContagem = await dbOrdens.listar();
+  const contarStatus = (s: string) => todasParaContagem.filter((o) => o.status === s).length;
 
   const abas = [
-    { chave: "todas", rotulo: "Todas", n: total },
+    { chave: "todas", rotulo: "Todas", n: todasParaContagem.length },
     ...Object.entries(STATUS_OS).map(([chave, rotulo]) => ({
       chave,
       rotulo,
@@ -80,13 +63,26 @@ export default async function PaginaOrdens({
           />
           <input
             name="q"
-            defaultValue={busca}
+            defaultValue={q}
             placeholder="Buscar por serviço, cliente ou endereço"
             className="campo pl-9"
           />
         </form>
 
-        <FormularioOrdem clientes={clientes} montadores={montadores} />
+        <FormularioOrdem
+          clientes={todosClientes.map((c) => ({
+            id: c.id,
+            nome: c.nome,
+            endereco: c.endereco ?? null,
+            numero: c.numero ?? null,
+            cidade: c.cidade ?? null,
+          }))}
+          montadores={todosMontadores.map((m) => ({
+            id: m.id,
+            nome: m.nome,
+            comissaoPadrao: m.comissaoPadrao,
+          }))}
+        />
       </div>
 
       {/* Filtros por status */}
@@ -94,7 +90,7 @@ export default async function PaginaOrdens({
         {abas.map((aba) => (
           <Link
             key={aba.chave}
-            href={`/ordens?status=${aba.chave}${busca ? `&q=${encodeURIComponent(busca)}` : ""}`}
+            href={`/ordens?status=${aba.chave}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
             className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
               status === aba.chave
                 ? "bg-marca-500 text-white"
@@ -127,8 +123,11 @@ export default async function PaginaOrdens({
         ) : (
           <ul className="divide-y divide-[#f1f4f3]">
             {ordens.map((os) => {
-              const assinouMontador = os.assinaturas.some((a) => a.tipo === "MONTADOR");
-              const assinouCliente = os.assinaturas.some((a) => a.tipo === "CLIENTE");
+              const cliente = clientesMap.get(os.clienteId);
+              const montador = os.montadorId ? montadoresMap.get(os.montadorId) : null;
+              const assinaturas = os.assinaturas || [];
+              const assinouMontador = assinaturas.some((a) => a.tipo === "MONTADOR");
+              const assinouCliente = assinaturas.some((a) => a.tipo === "CLIENTE");
 
               return (
                 <li key={os.id}>
@@ -153,7 +152,7 @@ export default async function PaginaOrdens({
                         {os.titulo}
                       </p>
                       <p className="mt-0.5 truncate text-xs text-suave">
-                        {os.cliente.nome}
+                        {cliente?.nome || "Cliente"}
                       </p>
 
                       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-suave">
@@ -182,13 +181,13 @@ export default async function PaginaOrdens({
                     </div>
 
                     <div className="flex items-center gap-4">
-                      {os.montador && (
+                      {montador && (
                         <span
                           className="hidden h-8 w-8 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white sm:grid"
-                          style={{ background: os.montador.corAvatar }}
-                          title={os.montador.nome}
+                          style={{ background: montador.corAvatar }}
+                          title={montador.nome}
                         >
-                          {iniciais(os.montador.nome)}
+                          {iniciais(montador.nome)}
                         </span>
                       )}
                       <div className="text-right">

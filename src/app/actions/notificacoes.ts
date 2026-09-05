@@ -1,15 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { dbNotificacoes } from "@/lib/firestore";
 import { exigirAdmin } from "@/lib/auth";
 
 export async function marcarTodasLidas() {
   await exigirAdmin();
-  await prisma.notificacao.updateMany({
-    where: { lida: false },
-    data: { lida: true },
-  });
+  await dbNotificacoes.marcarTodasComoLidas();
   revalidatePath("/", "layout");
 }
 
@@ -18,6 +15,6 @@ export async function marcarLida(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  await prisma.notificacao.update({ where: { id }, data: { lida: true } });
+  await dbNotificacoes.marcarComoLida(id);
   revalidatePath("/", "layout");
 }

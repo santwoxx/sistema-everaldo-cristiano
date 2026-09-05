@@ -10,7 +10,7 @@ import {
   Power,
   Trash2,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbLinks, dbUsuarios, dbOrcamentos } from "@/lib/firestore";
 import { urlBase } from "@/lib/negocio";
 import { data as fmtData, dataHora } from "@/lib/format";
 import { Etiqueta, Painel, Vazio } from "@/components/ui";
@@ -24,12 +24,21 @@ export const dynamic = "force-dynamic";
 export default async function PaginaLinks() {
   const base = urlBase();
 
-  const links = await prisma.linkPublico.findMany({
-    orderBy: { criadoEm: "desc" },
-    include: {
-      criadoPor: { select: { nome: true } },
-      _count: { select: { orcamentos: true } },
-    },
+  const [links, usuarios, orcamentos] = await Promise.all([
+    dbLinks.listar(),
+    dbUsuarios.listar(),
+    dbOrcamentos.listar(),
+  ]);
+
+  const usuariosMap = new Map(usuarios.map((u) => [u.id, u]));
+  const orcamentosCountMap = new Map<string, number>();
+  orcamentos.forEach((o) => {
+    if (o.linkId) {
+      orcamentosCountMap.set(
+        o.linkId,
+        (orcamentosCountMap.get(o.linkId) || 0) + 1
+      );
+    }
   });
 
   return (
@@ -58,8 +67,10 @@ export default async function PaginaLinks() {
         <div className="space-y-4">
           {links.map((l) => {
             const url = `${base}/orcamento/${l.token}`;
-            const expirado = !!l.expiraEm && l.expiraEm < new Date();
+            const expirado = !!l.expiraEm && new Date(l.expiraEm).getTime() < Date.now();
             const ativo = l.ativo && !expirado;
+            const criadoPor = l.criadoPorId ? usuariosMap.get(l.criadoPorId) : null;
+            const orcamentosCount = orcamentosCountMap.get(l.id) || 0;
 
             const mensagem = encodeURIComponent(
               `Olá! Aqui é da *EC Montagens de Móveis*. 🛠️\n\n` +
@@ -95,7 +106,7 @@ export default async function PaginaLinks() {
                         <Eye size={12} /> {l.acessos} acesso(s)
                       </span>
                       <span className="flex items-center gap-1">
-                        <Inbox size={12} /> {l._count.orcamentos} orçamento(s) recebido(s)
+                        <Inbox size={12} /> {orcamentosCount} orçamento(s) recebido(s)
                       </span>
                       <span className="flex items-center gap-1">
                         <CalendarClock size={12} /> criado em {dataHora(l.criadoEm)}
@@ -105,7 +116,7 @@ export default async function PaginaLinks() {
                           expira em {fmtData(l.expiraEm)}
                         </span>
                       )}
-                      {l.criadoPor && <span>por {l.criadoPor.nome}</span>}
+                      {criadoPor && <span>por {criadoPor.nome}</span>}
                     </div>
                   </div>
 

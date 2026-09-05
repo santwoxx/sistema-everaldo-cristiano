@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { encerrarSessao, exigirAdmin } from "@/lib/auth";
 import { limparBase, semear } from "@/lib/semear";
 
@@ -13,8 +12,8 @@ import { limparBase, semear } from "@/lib/semear";
 export async function restaurarDemonstracao() {
   await exigirAdmin();
 
-  await limparBase(prisma);
-  await semear(prisma, { comDemo: true });
+  await limparBase();
+  await semear({ comDemo: true });
 
   revalidatePath("/", "layout");
   await encerrarSessao();
@@ -28,8 +27,8 @@ export async function restaurarDemonstracao() {
 export async function limparParaProducao() {
   await exigirAdmin();
 
-  await limparBase(prisma);
-  await semear(prisma, { comDemo: false });
+  await limparBase();
+  await semear({ comDemo: false });
 
   revalidatePath("/", "layout");
   await encerrarSessao();

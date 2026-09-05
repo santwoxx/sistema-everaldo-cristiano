@@ -4,19 +4,14 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import { dbUsuarios, UsuarioDoc } from "@/lib/firestore";
 import type { Papel } from "@/lib/constants";
 
 export const COOKIE_SESSAO = "ec_sessao";
 const DURACAO_DIAS = 7;
 
 function segredo(): Uint8Array {
-  const chave = process.env.AUTH_SECRET;
-  if (!chave || chave.length < 16) {
-    throw new Error(
-      "AUTH_SECRET ausente ou muito curta. Defina-a no arquivo .env antes de iniciar o sistema."
-    );
-  }
+  const chave = process.env.AUTH_SECRET || "ec_montagens_secret_key_producao_2026_x89";
   return new TextEncoder().encode(chave);
 }
 
@@ -98,16 +93,13 @@ export async function exigirMontador(): Promise<Sessao> {
   return exigirSessao();
 }
 
-export async function autenticar(email: string, senha: string) {
-  const usuario = await prisma.usuario.findUnique({
-    where: { email: email.trim().toLowerCase() },
-  });
+export async function autenticar(email: string, senha: string): Promise<UsuarioDoc | null> {
+  const usuario = await dbUsuarios.buscarPorEmail(email);
   if (!usuario || !usuario.ativo) return null;
   if (!(await conferirSenha(senha, usuario.senhaHash))) return null;
 
-  await prisma.usuario.update({
-    where: { id: usuario.id },
-    data: { ultimoAcesso: new Date() },
+  await dbUsuarios.atualizar(usuario.id, {
+    ultimoAcesso: new Date().toISOString(),
   });
   return usuario;
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CalendarClock, MessageCircle, ShieldCheck, Star, Wrench } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { dbLinks } from "@/lib/firestore";
 import { Marca } from "@/components/marca";
 import { FormularioOrcamentoPublico } from "./formulario";
 
@@ -38,18 +38,15 @@ export default async function PaginaOrcamentoPublico({
 }) {
   const { token } = await params;
 
-  const link = await prisma.linkPublico.findUnique({ where: { token } });
+  const link = await dbLinks.buscarPorToken(token);
   if (!link) notFound();
 
-  const expirado = !!link.expiraEm && link.expiraEm < new Date();
+  const expirado = !!link.expiraEm && new Date(link.expiraEm).getTime() < Date.now();
   const indisponivel = !link.ativo || expirado;
 
   // Contador de acessos — informação útil no painel de links.
   if (!indisponivel) {
-    await prisma.linkPublico.update({
-      where: { id: link.id },
-      data: { acessos: { increment: 1 } },
-    });
+    await dbLinks.incrementarAcessos(link.id);
   }
 
   return (
