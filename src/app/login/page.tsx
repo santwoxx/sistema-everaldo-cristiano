@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { sessaoAtual } from "@/lib/auth";
 import { FormularioLogin } from "./formulario";
 import { Marca } from "@/components/marca";
-import { CheckCircle2, PenLine, TrendingUp, Wrench } from "lucide-react";
+import { PenLine, TrendingUp, Wrench } from "lucide-react";
+
 
 export const metadata: Metadata = { title: "Entrar" };
 
@@ -96,35 +97,12 @@ export default async function PaginaLogin() {
             <FormularioLogin />
           </div>
 
-          <div className="mt-6 rounded-2xl border-2 border-black bg-white p-4 shadow-sm">
-            <p className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-              <CheckCircle2 size={15} className="text-emerald-600" /> Regras de Acesso ao Sistema
-            </p>
-            <div className="mt-2.5 space-y-2.5 text-xs">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                <p className="font-bold text-slate-900">Administrador</p>
-                <p className="mt-0.5 text-slate-600">
-                  Acesso exclusivo via <strong>Google</strong> com o e-mail:
-                </p>
-                <code className="mt-1 block font-mono font-bold text-emerald-700">
-                  valdocem@gmail.com
-                </code>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                <p className="font-bold text-slate-900">Funcionários & Colaboradores</p>
-                <p className="mt-0.5 text-slate-600">
-                  Acesso via <strong>login e senha</strong> criados diretamente pelo administrador no painel da Equipe.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <p className="mt-6 text-center text-[11px] text-suave">
+          <p className="mt-8 text-center text-[11px] text-suave">
             © {new Date().getFullYear()} EC Montagens de Móveis
           </p>
         </div>
       </main>
+
 
     </div>
   );
